@@ -1,8 +1,4 @@
-"""
-services/student_service.py —— 学生信息 CRUD
-"""
 from db.connection import query, query_one, execute, DBSession
-
 
 def get_student_info(student_id: str) -> dict | None:
     return query_one(
@@ -17,7 +13,6 @@ def get_student_info(student_id: str) -> dict | None:
         """,
         (student_id,),
     )
-
 
 def list_students(keyword: str = None) -> list[dict]:
     sql = """
@@ -37,9 +32,7 @@ def list_students(keyword: str = None) -> list[dict]:
     sql += " ORDER BY s.student_id"
     return query(sql, args or None)
 
-
 def create_student(data: dict) -> tuple[bool, str]:
-    """创建账号 + 学生记录，事务保证原子性。"""
     from services.auth_service import hash_password
     try:
         with DBSession() as conn:
@@ -66,7 +59,6 @@ def create_student(data: dict) -> tuple[bool, str]:
     except Exception as exc:
         return False, str(exc)
 
-
 def update_student(student_id: str, data: dict) -> tuple[bool, str]:
     try:
         execute(
@@ -85,7 +77,6 @@ def update_student(student_id: str, data: dict) -> tuple[bool, str]:
         return True, ""
     except Exception as exc:
         return False, str(exc)
-
 
 def delete_student(student_id: str) -> tuple[bool, str]:
     row = query_one("SELECT user_id FROM student WHERE student_id=%s", (student_id,))

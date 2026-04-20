@@ -1,6 +1,3 @@
-"""
-pages/student_report.py —— 学生个人成绩单
-"""
 import streamlit as st
 import pandas as pd
 from pages._guards import require_role
@@ -8,7 +5,6 @@ from services.score_service import get_student_transcript
 from services.student_service import get_student_info
 
 _TYPE_LABEL = {"required": "必修", "elective": "选修", "public": "公共"}
-
 
 def render() -> None:
     require_role("student")
@@ -29,7 +25,6 @@ def render() -> None:
         st.info("暂无已结课成绩记录")
         return
 
-    # 汇总统计
     total_credit  = sum(float(r["credit"]) for r in records)
     passed        = [r for r in records if r["final_score"] is not None and float(r["final_score"]) >= 60]
     avg_score     = sum(float(r["final_score"]) for r in records if r["final_score"]) / len(records)

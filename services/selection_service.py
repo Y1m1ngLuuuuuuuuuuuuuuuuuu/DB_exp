@@ -1,11 +1,6 @@
-"""
-services/selection_service.py —— 选课 / 退课业务逻辑
-"""
 from db.connection import query_one, execute
 
-
 def _has_passed_prerequisites(student_id: str, offering_id: int) -> tuple[bool, str]:
-    """Check whether the student has passed all prerequisites for the offering."""
     target = query_one(
         """
         SELECT co.course_id
@@ -49,14 +44,7 @@ def _has_passed_prerequisites(student_id: str, offering_id: int) -> tuple[bool, 
         return False, "未满足先修课程要求"
     return True, ""
 
-
 def enroll(student_id: str, offering_id: int) -> tuple[bool, str]:
-    """
-    选课。
-    - 重复选课（selected 状态）→ 提示已选
-    - 曾退课（dropped 状态）  → 恢复为 selected
-    - 新选课                  → INSERT
-    """
     existing = query_one(
         "SELECT enrollment_id, status FROM enrollment "
         "WHERE student_id=%s AND offering_id=%s",
@@ -68,7 +56,7 @@ def enroll(student_id: str, offering_id: int) -> tuple[bool, str]:
         if existing["status"] == "completed":
             return False, "该课程已结课，不能重复在同一班次中选课"
         if existing["status"] == "dropped":
-            # 检查容量后恢复
+
             offering = query_one(
                 """
                 SELECT co.max_capacity, co.selected_count, co.status,
@@ -102,7 +90,6 @@ def enroll(student_id: str, offering_id: int) -> tuple[bool, str]:
             )
             return True, ""
 
-    # 检查开课状态与容量
     offering = query_one(
         """
         SELECT co.max_capacity, co.selected_count, co.status,
@@ -142,9 +129,7 @@ def enroll(student_id: str, offering_id: int) -> tuple[bool, str]:
     except Exception as exc:
         return False, str(exc)
 
-
 def drop(enrollment_id: int, student_id: str) -> tuple[bool, str]:
-    """退课：将 enrollment.status 改为 dropped。"""
     row = query_one(
         """
         SELECT e.status, e.student_id, e.final_score,

@@ -1,11 +1,6 @@
-"""
-services/score_service.py —— 成绩录入 / 查询 / 统计
-"""
 from db.connection import query, query_one, execute
 
-
 def calc_gpa(score: float) -> float:
-    """百分制 → 绩点（常见五档制）。"""
     if score >= 90: return 4.0
     if score >= 85: return 3.7
     if score >= 82: return 3.3
@@ -17,9 +12,7 @@ def calc_gpa(score: float) -> float:
     if score >= 60: return 1.0
     return 0.0
 
-
 def get_enrollments_for_offering(offering_id: int) -> list[dict]:
-    """获取某开课班次所有「未退课」的选课记录（含学生信息）。"""
     return query(
         """
         SELECT e.enrollment_id, e.student_id, e.status,
@@ -33,13 +26,11 @@ def get_enrollments_for_offering(offering_id: int) -> list[dict]:
         (offering_id,),
     )
 
-
 def can_manage_offering_score(
     offering_id: int,
     role: str,
     teacher_id: str | None = None,
 ) -> tuple[bool, str]:
-    """Check whether the current role can manage the offering's scores."""
     if role == "admin":
         return True, ""
 
@@ -56,7 +47,6 @@ def can_manage_offering_score(
         return False, "教师只能维护自己负责的开课班次"
     return True, ""
 
-
 def update_score(
     enrollment_id: int,
     new_score: float | None,
@@ -65,7 +55,6 @@ def update_score(
     role: str = "",
     teacher_id: str | None = None,
 ) -> tuple[bool, str]:
-    """更新成绩并写入修改日志。"""
     row = query_one(
         """
         SELECT e.final_score, e.status, e.offering_id
@@ -109,9 +98,7 @@ def update_score(
     except Exception as exc:
         return False, str(exc)
 
-
 def get_student_transcript(student_id: str) -> list[dict]:
-    """学生所有已结课的成绩单（按学期倒序）。"""
     return query(
         """
         SELECT c.course_name, c.credit, c.course_type,
@@ -128,9 +115,7 @@ def get_student_transcript(student_id: str) -> list[dict]:
         (student_id,),
     )
 
-
 def get_score_distribution(offering_id: int) -> dict:
-    """返回该班次的成绩段分布 {段名: 人数}。"""
     rows = query(
         "SELECT final_score FROM enrollment "
         "WHERE offering_id=%s AND final_score IS NOT NULL AND status='completed'",
@@ -148,9 +133,7 @@ def get_score_distribution(offering_id: int) -> dict:
         else:         buckets["不及格"]  += 1
     return buckets
 
-
 def get_score_change_log(offering_id: int | None = None, limit: int = 100) -> list[dict]:
-    """获取成绩修改日志，可按班次过滤。"""
     sql = """
         SELECT scl.log_id, scl.changed_at, scl.old_score, scl.new_score, scl.reason,
                u.username AS changed_by,

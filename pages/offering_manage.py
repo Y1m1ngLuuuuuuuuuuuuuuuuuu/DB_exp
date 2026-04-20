@@ -1,7 +1,3 @@
-"""
-pages/offering_manage.py —— 开课安排管理（管理员）
-为课程分配教师、教室、学期，管理开课班次。
-"""
 import streamlit as st
 import pandas as pd
 from pages._guards import require_role
@@ -15,14 +11,12 @@ from services.course_service import (
 _STATUS_LABEL = {"open": "开放选课", "closed": "已关闭", "cancelled": "已取消"}
 _STATUS_OPTIONS = ["open", "closed", "cancelled"]
 
-
 def render() -> None:
     require_role("admin")
     st.header("开课安排管理")
 
     tab_list, tab_add = st.tabs(["班次列表", "新增开课班次"])
 
-    # ── 辅助数据 ─────────────────────────────────────────────────
     semesters  = list_semesters()
     courses    = list_courses(include_inactive=False)
     teachers   = query("SELECT teacher_id, teacher_name FROM teacher WHERE status='active' ORDER BY teacher_id")
@@ -38,7 +32,6 @@ def render() -> None:
         st.warning("请先在「学期管理」中创建学期")
         return
 
-    # ── 班次列表 ─────────────────────────────────────────────────
     with tab_list:
         sel_sem_id = st.selectbox(
             "选择学期",
@@ -65,7 +58,6 @@ def render() -> None:
             ])
             st.dataframe(df, use_container_width=True, hide_index=True)
 
-            # 编辑 / 删除
             st.subheader("修改 / 删除班次")
             off_opts = {o["offering_id"]: f"ID={o['offering_id']}  {o['course_id']} {o['course_name']} — {o['teacher_name']}"
                         for o in offerings}
@@ -115,7 +107,6 @@ def render() -> None:
                 if ok:
                     st.rerun()
 
-    # ── 新增开课班次 ──────────────────────────────────────────────
     with tab_add:
         if not courses:
             st.warning("请先在「课程信息维护」中添加课程")

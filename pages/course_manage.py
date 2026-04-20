@@ -1,6 +1,3 @@
-"""
-pages/course_manage.py —— 课程信息维护（管理员）
-"""
 import streamlit as st
 import pandas as pd
 from pages._guards import require_role
@@ -23,14 +20,12 @@ _TYPE_OPTIONS = ["required", "elective", "public"]
 _OFFERING_STATUS_OPTIONS = ["open", "closed", "cancelled"]
 _OFFERING_STATUS_LABEL = {"open": "开放", "closed": "关闭", "cancelled": "取消"}
 
-
 def render() -> None:
     require_role("admin")
     st.header("课程与开课安排维护")
 
     tab_list, tab_add, tab_offering = st.tabs(["课程列表", "新增课程", "开课安排"])
 
-    # ── 课程列表 ─────────────────────────────────────────────
     with tab_list:
         kw = st.text_input("搜索课程", placeholder="课程号 / 课程名")
         courses = list_courses(keyword=kw or None, include_inactive=True)
@@ -52,7 +47,6 @@ def render() -> None:
             ])
             st.dataframe(df, use_container_width=True, hide_index=True)
 
-            # 快速修改状态
             st.subheader("修改课程信息")
             course_ids = [c["course_id"] for c in courses]
             sel_cid = st.selectbox("选择课程", course_ids,
@@ -107,7 +101,6 @@ def render() -> None:
                 if ok:
                     st.rerun()
 
-    # ── 新增课程 ─────────────────────────────────────────────
     with tab_add:
         depts = query("SELECT dept_id, dept_name FROM department")
         dept_opts = {d["dept_id"]: d["dept_name"] for d in depts}
@@ -138,7 +131,6 @@ def render() -> None:
                     if ok:
                         st.rerun()
 
-    # ── 开课安排维护 ──────────────────────────────────────────
     with tab_offering:
         semesters = list_semesters()
         semester_map = {s["semester_id"]: s["semester_name"] for s in semesters}

@@ -1,6 +1,3 @@
-"""
-pages/student_manage.py —— 学生信息维护（管理员）
-"""
 import streamlit as st
 import pandas as pd
 from pages._guards import require_role
@@ -11,14 +8,12 @@ _GENDER_LABEL = {"M": "男", "F": "女", "O": "其他"}
 _STATUS_OPTIONS = ["enrolled", "suspended", "graduated", "dropped"]
 _STATUS_LABEL   = {"enrolled": "在籍", "suspended": "休学", "graduated": "已毕业", "dropped": "退学"}
 
-
 def render() -> None:
     require_role("admin")
     st.header("学生信息维护")
 
     tab_list, tab_add = st.tabs(["学生列表", "新增学生"])
 
-    # ── 学生列表 ─────────────────────────────────────────────
     with tab_list:
         kw = st.text_input("搜索", placeholder="学号 / 姓名")
         students = list_students(keyword=kw or None)
@@ -44,7 +39,6 @@ def render() -> None:
         ])
         st.dataframe(df, use_container_width=True, hide_index=True)
 
-        # 编辑 / 删除
         st.subheader("编辑学生信息")
         sids = [s["student_id"] for s in students]
         sel_sid = st.selectbox(
@@ -92,7 +86,6 @@ def render() -> None:
                 if ok:
                     st.rerun()
 
-    # ── 新增学生 ─────────────────────────────────────────────
     with tab_add:
         majors = query("SELECT major_id, major_name FROM major ORDER BY major_id")
         major_opts = {m["major_id"]: m["major_name"] for m in majors}

@@ -1,6 +1,3 @@
-"""
-pages/teacher_manage.py —— 教师信息维护（管理员）
-"""
 import streamlit as st
 import pandas as pd
 from pages._guards import require_role
@@ -12,14 +9,12 @@ _STATUS_OPTIONS = ["active", "retired", "leave"]
 _STATUS_LABEL   = {"active": "在职", "retired": "退休", "leave": "请假"}
 _TITLE_OPTIONS  = ["教授", "副教授", "讲师", "助教", "其他"]
 
-
 def render() -> None:
     require_role("admin")
     st.header("教师信息维护")
 
     tab_list, tab_add = st.tabs(["教师列表", "新增教师"])
 
-    # ── 教师列表 ─────────────────────────────────────────────
     with tab_list:
         kw = st.text_input("搜索", placeholder="教师号 / 姓名")
         teachers = list_teachers(keyword=kw or None)
@@ -43,7 +38,6 @@ def render() -> None:
         ])
         st.dataframe(df, use_container_width=True, hide_index=True)
 
-        # 编辑 / 删除
         st.subheader("编辑教师信息")
         tids = [t["teacher_id"] for t in teachers]
         sel_tid = st.selectbox(
@@ -104,7 +98,6 @@ def render() -> None:
                 if ok:
                     st.rerun()
 
-    # ── 新增教师 ─────────────────────────────────────────────
     with tab_add:
         depts = query("SELECT dept_id, dept_name FROM department ORDER BY dept_id")
         dept_opts = {d["dept_id"]: d["dept_name"] for d in depts}

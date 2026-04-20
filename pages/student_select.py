@@ -1,6 +1,3 @@
-"""
-pages/student_select.py —— 学生选课页（可选课程 + 已选课程管理）
-"""
 import streamlit as st
 from pages._guards import require_role
 from services.course_service import (
@@ -12,7 +9,6 @@ from services.selection_service import enroll, drop
 
 _TYPE_LABEL = {"required": "必修", "elective": "选修", "public": "公共"}
 _STATUS_LABEL = {"selected": "已选", "dropped": "已退课", "completed": "已结课"}
-
 
 def render() -> None:
     require_role("student")
@@ -33,7 +29,6 @@ def render() -> None:
 
     tab_avail, tab_enrolled = st.tabs(["可选课程", "已选课程"])
 
-    # ── 可选课程 ──────────────────────────────────────────────
     with tab_avail:
         available = list_offerings_for_student(student_id, semester["semester_id"])
         if not available:
@@ -61,7 +56,6 @@ def render() -> None:
                 else:
                     st.warning("名额已满")
 
-    # ── 已选课程 ──────────────────────────────────────────────
     with tab_enrolled:
         enrolled = list_enrolled_offerings(student_id, semester["semester_id"])
         if not enrolled:

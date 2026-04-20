@@ -1,11 +1,6 @@
-"""
-pages/_guards.py -- page-level access guards
-"""
 import streamlit as st
 
-
 def require_role(*allowed_roles: str) -> str:
-    """Ensure the current user is logged in and has one of the allowed roles."""
     if not st.session_state.get("logged_in"):
         st.error("请先登录后再访问该页面。")
         st.stop()

@@ -1,6 +1,3 @@
-"""
-pages/semester_manage.py —— 学期管理（管理员）
-"""
 import streamlit as st
 import pandas as pd
 from datetime import date
@@ -10,14 +7,12 @@ from services.course_service import list_semesters, create_semester, update_seme
 _STATUS_LABEL = {"planned": "未开放", "open": "选课中", "closed": "已结束"}
 _STATUS_OPTIONS = ["planned", "open", "closed"]
 
-
 def render() -> None:
     require_role("admin")
     st.header("学期管理")
 
     tab_list, tab_add = st.tabs(["学期列表", "新增学期"])
 
-    # ── 学期列表 + 编辑 ──────────────────────────────────────────
     with tab_list:
         semesters = list_semesters()
         if not semesters:
@@ -76,7 +71,6 @@ def render() -> None:
                         if ok:
                             st.rerun()
 
-    # ── 新增学期 ─────────────────────────────────────────────────
     with tab_add:
         with st.form("add_semester"):
             col1, col2 = st.columns(2)

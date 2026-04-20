@@ -1,9 +1,5 @@
-"""
-pages/login.py —— 登录页
-"""
 import streamlit as st
 from services.auth_service import login, get_student_id, get_teacher_id
-
 
 def render() -> None:
     _, col, _ = st.columns([1, 2, 1])

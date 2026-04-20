@@ -1,8 +1,4 @@
-"""
-services/teacher_service.py —— 教师信息 CRUD
-"""
 from db.connection import query, query_one, execute, DBSession
-
 
 def get_teacher_info(teacher_id: str) -> dict | None:
     return query_one(
@@ -16,7 +12,6 @@ def get_teacher_info(teacher_id: str) -> dict | None:
         """,
         (teacher_id,),
     )
-
 
 def list_teachers(keyword: str = None) -> list[dict]:
     sql = """
@@ -33,7 +28,6 @@ def list_teachers(keyword: str = None) -> list[dict]:
         args += [f"%{keyword}%", f"%{keyword}%"]
     sql += " ORDER BY t.teacher_id"
     return query(sql, args or None)
-
 
 def create_teacher(data: dict) -> tuple[bool, str]:
     from services.auth_service import hash_password
@@ -61,7 +55,6 @@ def create_teacher(data: dict) -> tuple[bool, str]:
     except Exception as exc:
         return False, str(exc)
 
-
 def update_teacher(teacher_id: str, data: dict) -> tuple[bool, str]:
     try:
         execute(
@@ -81,9 +74,8 @@ def update_teacher(teacher_id: str, data: dict) -> tuple[bool, str]:
     except Exception as exc:
         return False, str(exc)
 
-
 def delete_teacher(teacher_id: str) -> tuple[bool, str]:
-    # 有开课班次时拒绝删除
+
     cnt = query_one(
         "SELECT COUNT(*) AS n FROM course_offering WHERE teacher_id=%s", (teacher_id,)
     )

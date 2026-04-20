@@ -1,17 +1,12 @@
-"""
-pages/admin_dashboard.py —— 管理员首页（系统概览）
-"""
 import streamlit as st
 import pandas as pd
 from pages._guards import require_role
 from db.connection import query_one, query
 
-
 def render() -> None:
     require_role("admin")
     st.header("管理员首页")
 
-    # ── 四格概览 ─────────────────────────────────────────────
     stats = {
         "在籍学生": query_one("SELECT COUNT(*) n FROM student WHERE status='enrolled'")["n"],
         "在职教师": query_one("SELECT COUNT(*) n FROM teacher WHERE status='active'")["n"],
@@ -31,7 +26,6 @@ def render() -> None:
 
     left, right = st.columns(2)
 
-    # ── 开课班次选课情况 ─────────────────────────────────────
     with left:
         st.subheader("各班次选课情况（最近学期）")
         rows = query(
@@ -58,7 +52,6 @@ def render() -> None:
             ])
             st.dataframe(df, use_container_width=True, hide_index=True)
 
-    # ── 各院系学生人数 ────────────────────────────────────────
     with right:
         st.subheader("各院系在籍学生人数")
         dept_rows = query(

@@ -1,7 +1,3 @@
-"""
-pages/score_manage.py —— 成绩管理（教师 / 管理员）
-使用 st.data_editor 实现批量录入与修改。
-"""
 import streamlit as st
 import pandas as pd
 from pages._guards import require_role
@@ -14,7 +10,6 @@ from services.score_service import (
     get_score_change_log,
 )
 
-
 def render() -> None:
     role       = require_role("teacher", "admin")
     user_id    = st.session_state.user_id
@@ -24,7 +19,6 @@ def render() -> None:
 
     tab_entry, tab_log = st.tabs(["成绩录入", "修改日志"])
 
-    # ── 学期 / 班次选择（两个 Tab 共用）─────────────────────────
     semesters = list_semesters()
     if not semesters:
         st.info("暂无学期数据")
@@ -55,7 +49,6 @@ def render() -> None:
         format_func=lambda x: off_map[x],
     )
 
-    # ── Tab 1：成绩录入 ──────────────────────────────────────────
     with tab_entry:
         allowed, msg = can_manage_offering_score(sel_oid, role, teacher_id)
         if not allowed:
@@ -113,7 +106,6 @@ def render() -> None:
                     if saved:
                         st.rerun()
 
-                # 成绩分布图
                 dist = get_score_distribution(sel_oid)
                 if dist:
                     st.divider()
@@ -121,7 +113,6 @@ def render() -> None:
                     dist_df = pd.DataFrame(list(dist.items()), columns=["分数段", "人数"])
                     st.bar_chart(dist_df.set_index("分数段"))
 
-    # ── Tab 2：修改日志 ──────────────────────────────────────────
     with tab_log:
         logs = get_score_change_log(offering_id=sel_oid)
         if not logs:

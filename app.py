@@ -1,21 +1,7 @@
-"""
-app.py —— Streamlit 入口
-
-启动方式:
-    streamlit run app.py
-
-职责:
-  1. 全局页面配置
-  2. session_state 初始化
-  3. 未登录 → 渲染登录页
-  4. 已登录 → 侧边栏导航 + 加载对应页面模块
-"""
-
 import importlib
 import streamlit as st
 from config import APP_TITLE, APP_ICON
 
-# ── 页面全局配置（必须在所有 st 调用之前）──────────────────────
 st.set_page_config(
     page_title=APP_TITLE,
     page_icon=APP_ICON,
@@ -23,43 +9,31 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Session state 默认值 ─────────────────────────────────────
-
 _SESSION_DEFAULTS: dict = {
     "logged_in":  False,
-    "user_id":    None,   # user_account.user_id
+    "user_id":    None,
     "username":   None,
-    "role":       None,   # 'admin' | 'student' | 'teacher'
-    "student_id": None,   # 学生才有
-    "teacher_id": None,   # 教师才有
+    "role":       None,
+    "student_id": None,
+    "teacher_id": None,
 }
 
 for _k, _v in _SESSION_DEFAULTS.items():
     if _k not in st.session_state:
         st.session_state[_k] = _v
 
-
-# ── 辅助函数 ─────────────────────────────────────────────────
-
 def logout() -> None:
-    """清空 session 并刷新页面。"""
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     st.rerun()
-
-
-# ── 未登录 → 渲染登录页 ───────────────────────────────────────
 
 if not st.session_state.logged_in:
     from pages.login import render as render_login
     render_login()
     st.stop()
 
-# ── 已登录 → 侧边栏导航 ───────────────────────────────────────
-
 role = st.session_state.role
 
-# 各角色可访问的页面 {显示名: 模块路径}
 _NAV: dict[str, dict[str, str]] = {
     "student": {
         "我的选课":   "pages.student_select",
@@ -95,8 +69,6 @@ with st.sidebar:
     st.divider()
     if st.button("退出登录", use_container_width=True):
         logout()
-
-# ── 加载并渲染所选页面 ────────────────────────────────────────
 
 if choice and choice in pages:
     try:

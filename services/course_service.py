@@ -1,24 +1,15 @@
-"""
-services/course_service.py —— 课程 / 开课班次查询与维护
-"""
 from db.connection import query, query_one, execute
-
-
-# ── 学期 ─────────────────────────────────────────────────────
 
 def list_semesters() -> list[dict]:
     return query("SELECT * FROM semester ORDER BY start_date DESC")
 
-
 def get_active_semester() -> dict | None:
-    """返回 status='open' 的学期；若无则返回最近一个。"""
     row = query_one(
         "SELECT * FROM semester WHERE status='open' ORDER BY start_date DESC LIMIT 1"
     )
     return row or query_one(
         "SELECT * FROM semester ORDER BY start_date DESC LIMIT 1"
     )
-
 
 def create_semester(data: dict) -> tuple[bool, str]:
     try:
@@ -40,7 +31,6 @@ def create_semester(data: dict) -> tuple[bool, str]:
     except Exception as exc:
         return False, str(exc)
 
-
 def update_semester(semester_id: str, data: dict) -> tuple[bool, str]:
     try:
         execute(
@@ -60,9 +50,6 @@ def update_semester(semester_id: str, data: dict) -> tuple[bool, str]:
     except Exception as exc:
         return False, str(exc)
 
-
-# ── 课程基础信息 ─────────────────────────────────────────────
-
 def list_courses(keyword: str = None, include_inactive: bool = False) -> list[dict]:
     sql = """
         SELECT c.course_id, c.course_name, c.course_type, c.credit,
@@ -79,7 +66,6 @@ def list_courses(keyword: str = None, include_inactive: bool = False) -> list[di
         args += [f"%{keyword}%", f"%{keyword}%"]
     sql += " ORDER BY c.course_id"
     return query(sql, args or None)
-
 
 def create_course(data: dict) -> tuple[bool, str]:
     try:
@@ -98,7 +84,6 @@ def create_course(data: dict) -> tuple[bool, str]:
         return True, ""
     except Exception as exc:
         return False, str(exc)
-
 
 def update_course(course_id: str, data: dict) -> tuple[bool, str]:
     try:
@@ -119,7 +104,6 @@ def update_course(course_id: str, data: dict) -> tuple[bool, str]:
     except Exception as exc:
         return False, str(exc)
 
-
 def delete_course(course_id: str) -> tuple[bool, str]:
     has_offering = query_one(
         "SELECT COUNT(*) n FROM course_offering WHERE course_id=%s", (course_id,)
@@ -133,9 +117,6 @@ def delete_course(course_id: str) -> tuple[bool, str]:
         return True, ""
     except Exception as exc:
         return False, str(exc)
-
-
-# ── 开课班次 ─────────────────────────────────────────────────
 
 def list_offerings(semester_id: str = None, teacher_id: str = None) -> list[dict]:
     sql = """
@@ -162,9 +143,7 @@ def list_offerings(semester_id: str = None, teacher_id: str = None) -> list[dict
     sql += " ORDER BY co.offering_id"
     return query(sql, args or None)
 
-
 def list_offerings_for_student(student_id: str, semester_id: str) -> list[dict]:
-    """学生在指定学期可以选（未选或已退课）的班次。"""
     return query(
         """
         SELECT co.offering_id, co.schedule_text, co.max_capacity,
@@ -188,11 +167,9 @@ def list_offerings_for_student(student_id: str, semester_id: str) -> list[dict]:
         (semester_id, student_id),
     )
 
-
 def list_classrooms() -> list[dict]:
     from db.connection import query as _query
     return _query("SELECT classroom_id, building, room_no, capacity FROM classroom ORDER BY building, room_no")
-
 
 def create_offering(data: dict) -> tuple[bool, str]:
     try:
@@ -213,7 +190,6 @@ def create_offering(data: dict) -> tuple[bool, str]:
     except Exception as exc:
         return False, str(exc)
 
-
 def update_offering(offering_id: int, data: dict) -> tuple[bool, str]:
     try:
         execute(
@@ -233,7 +209,6 @@ def update_offering(offering_id: int, data: dict) -> tuple[bool, str]:
     except Exception as exc:
         return False, str(exc)
 
-
 def delete_offering(offering_id: int) -> tuple[bool, str]:
     enrolled = query_one(
         "SELECT COUNT(*) n FROM enrollment WHERE offering_id=%s",
@@ -248,9 +223,7 @@ def delete_offering(offering_id: int) -> tuple[bool, str]:
     except Exception as exc:
         return False, str(exc)
 
-
 def list_enrolled_offerings(student_id: str, semester_id: str) -> list[dict]:
-    """学生在指定学期的所有选课记录（含已退课）。"""
     return query(
         """
         SELECT e.enrollment_id, e.status AS enroll_status,
