@@ -1,6 +1,6 @@
 # 学生选课成绩管理系统
 
-基于 Python + Streamlit + PyMySQL + Docker MySQL 的 Web 选课系统，实现学生选课、成绩管理和基础信息维护等核心功能。
+基于 Python + Streamlit + psycopg2 + Docker openGauss 的 Web 选课系统，实现学生选课、成绩管理和基础信息维护等核心功能。
 
 ---
 
@@ -87,13 +87,15 @@
 ├── config.py                 # 数据库连接参数和应用基础配置
 ├── requirements.txt          # Python 依赖列表
 │
-├── sql/
-│   └── init.sql              # 建库建表脚本，含触发器和样本数据，首次部署时执行一次
+├── opengauss_setup/
+│   ├── docker/               # openGauss Docker Compose、初始化脚本、Tunnel 接入说明
+│   ├── config/               # openGauss 连接配置样例
+│   └── sql/init.sql          # openGauss 建表脚本，含触发器和样本数据
 │
 ├── db/
 │   ├── __init__.py           # 统一导出数据库工具函数
 │   └── connection.py         # 数据库连接管理
-│                             #   get_connection()    获取 PyMySQL 连接（DictCursor）
+│                             #   get_connection()    获取 openGauss 连接（RealDictCursor）
 │                             #   DBSession           上下文管理器，自动提交/回滚
 │                             #   query(sql, args)    SELECT → list[dict]
 │                             #   query_one(sql, args)SELECT → dict | None
@@ -159,52 +161,42 @@
 
 ---
 
-### 第一步：启动 MySQL 容器
+### 第一步：启动 openGauss 容器并初始化数据库
 
 ```bash
-docker run -d \
-  --name course-mysql \
-  -p 3306:3306 \
-  -e MYSQL_ROOT_PASSWORD=123 \
-  mysql:8.0 \
-  --character-set-server=utf8mb4 \
-  --collation-server=utf8mb4_unicode_ci
+./opengauss_setup/docker/start_opengauss.sh
 ```
 
-等待约 10 秒让 MySQL 完成初始化，可用以下命令确认容器状态：
+此脚本会启动 `course-opengauss` 容器，创建 `course_system` 数据库，并导入 `opengauss_setup/sql/init.sql` 中的表、触发器和样本数据。
+
+如需只启动容器：
 
 ```bash
-docker ps
+docker compose -f opengauss_setup/docker/docker-compose.yml up -d
 ```
 
-看到 `course-mysql` 的 STATUS 为 `Up` 即可继续。
+如需重新初始化数据库：
+
+```bash
+./opengauss_setup/docker/init_db.sh
+```
 
 ---
 
-### 第二步：初始化数据库
+### 第二步：创建并激活 Python 环境
 
 ```bash
-docker exec -i course-mysql mysql -uroot -p123 < sql/init.sql
-```
-
-此命令会创建 `course_system` 数据库、所有表、触发器，并导入样本数据。**只需执行一次。**
-
----
-
-### 第三步：创建并激活 Python 环境
-
-```bash
-conda create -n db_st python=3.11 -y
-conda activate db_st
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
 ---
 
-### 第四步：启动应用
+### 第三步：启动应用
 
 ```bash
-streamlit run app.py
+streamlit run app.py --server.address 0.0.0.0 --server.port 8501
 ```
 
 浏览器会自动打开，或手动访问：
@@ -215,33 +207,50 @@ http://localhost:8501
 
 ---
 
+### Cloudflare Tunnel
+
+如果 Cloudflare Tunnel 跑在 Docker 里，origin 指向：
+
+```text
+http://host.docker.internal:8501
+```
+
+如果 Cloudflare Tunnel 跑在本机命令行，origin 指向：
+
+```text
+http://localhost:8501
+```
+
+当前项目只要求 Streamlit 监听 `8501`，不需要把 openGauss 数据库端口暴露到公网。
+
+---
+
 ### 日常重启（容器已存在时）
 
 如果容器已经创建过，重启电脑后只需：
 
 ```bash
 # 重启容器
-docker start course-mysql
+docker start course-opengauss
 
 # 激活环境并启动应用
-conda activate db_st
-streamlit run app.py
+source .venv/bin/activate
+streamlit run app.py --server.address 0.0.0.0 --server.port 8501
 ```
 
 ---
 
 ### 修改数据库连接参数
 
-如果你的 MySQL 密码或端口与默认值不同，编辑 `config.py`：
+如果你的 openGauss 密码或端口与默认值不同，编辑 `config.py`：
 
 ```python
 DB_CONFIG = {
     "host":     "127.0.0.1",
-    "port":     3306,        # MySQL 映射到本机的端口
-    "user":     "root",
-    "password": "123",       # 与 docker run -e MYSQL_ROOT_PASSWORD 一致
+    "port":     15432,
+    "user":     "gaussdb",
+    "password": "Secretpassword@123",
     "database": "course_system",
-    "charset":  "utf8mb4",
 }
 ```
 
@@ -252,6 +261,5 @@ DB_CONFIG = {
 如需清空所有数据并重新初始化：
 
 ```bash
-docker exec -i course-mysql mysql -uroot -p123 -e "DROP DATABASE IF EXISTS course_system;"
-docker exec -i course-mysql mysql -uroot -p123 < sql/init.sql
+./opengauss_setup/docker/init_db.sh
 ```

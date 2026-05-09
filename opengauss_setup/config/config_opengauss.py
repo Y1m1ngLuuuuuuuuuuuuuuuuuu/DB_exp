@@ -5,8 +5,3 @@ DB_CONFIG = {
     "password": "Secretpassword@123",
     "database": "course_system",
 }
-
-APP_TITLE   = "选课管理系统"
-APP_ICON    = "📚"
-
-PASSWORD_HASH_ALGO = "sha256"

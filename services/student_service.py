@@ -38,10 +38,14 @@ def create_student(data: dict) -> tuple[bool, str]:
         with DBSession() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO user_account (username, password_hash, role) VALUES (%s,%s,'student')",
+                    """
+                    INSERT INTO user_account (username, password_hash, role)
+                    VALUES (%s,%s,'student')
+                    RETURNING user_id
+                    """,
                     (data["username"], hash_password(data.get("password", "123456"))),
                 )
-                user_id = cur.lastrowid
+                user_id = cur.fetchone()["user_id"]
                 cur.execute(
                     """
                     INSERT INTO student

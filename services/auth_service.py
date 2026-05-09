@@ -12,7 +12,7 @@ def login(username: str, password: str) -> dict | None:
     )
     if row and row["status"] == "active":
         execute(
-            "UPDATE user_account SET last_login_at=NOW() WHERE user_id=%s",
+            "UPDATE user_account SET last_login_at=CURRENT_TIMESTAMP WHERE user_id=%s",
             (row["user_id"],),
         )
         return row
