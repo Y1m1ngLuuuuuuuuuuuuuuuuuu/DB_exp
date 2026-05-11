@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS semester CASCADE;
 DROP TABLE IF EXISTS admin_profile CASCADE;
 DROP TABLE IF EXISTS teacher CASCADE;
 DROP TABLE IF EXISTS student CASCADE;
+DROP TABLE IF EXISTS user_session CASCADE;
 DROP TABLE IF EXISTS user_account CASCADE;
 DROP TABLE IF EXISTS major CASCADE;
 DROP TABLE IF EXISTS department CASCADE;
@@ -44,6 +45,22 @@ CREATE TABLE user_account (
     CONSTRAINT chk_user_role CHECK (role IN ('admin','student','teacher')),
     CONSTRAINT chk_user_status CHECK (status IN ('active','disabled'))
 );
+
+CREATE TABLE user_session (
+    session_id   BIGSERIAL   NOT NULL,
+    user_id      BIGINT      NOT NULL,
+    token_hash   VARCHAR(64) NOT NULL,
+    created_at   TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at   TIMESTAMP   NOT NULL,
+    revoked_at   TIMESTAMP,
+    last_seen_at TIMESTAMP,
+    PRIMARY KEY (session_id),
+    CONSTRAINT uq_user_session_token UNIQUE (token_hash),
+    CONSTRAINT fk_user_session_user FOREIGN KEY (user_id) REFERENCES user_account (user_id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_user_session_user ON user_session (user_id);
+CREATE INDEX idx_user_session_valid ON user_session (token_hash, expires_at, revoked_at);
 
 CREATE TABLE student (
     student_id   VARCHAR(20)  NOT NULL,

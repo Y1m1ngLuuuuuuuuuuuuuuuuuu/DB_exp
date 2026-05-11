@@ -10,3 +10,6 @@ APP_TITLE   = "选课管理系统"
 APP_ICON    = "📚"
 
 PASSWORD_HASH_ALGO = "sha256"
+
+SESSION_COOKIE_NAME = "course_system_session"
+SESSION_COOKIE_MAX_AGE_DAYS = 7

@@ -57,6 +57,7 @@
 | 表名 | 说明 |
 |------|------|
 | `user_account` | 统一账号表，存储登录名、SHA-256 密码、角色（admin/student/teacher）和账号状态 |
+| `user_session` | 登录会话表，存储浏览器 Cookie token 的哈希、过期时间和撤销时间 |
 | `student` | 学生详细信息：学号、姓名、性别、入学年、所属专业、班级、邮箱 |
 | `teacher` | 教师详细信息：教师号、姓名、性别、所属院系、职称、邮箱 |
 | `admin_profile` | 管理员详细信息 |
@@ -181,6 +182,12 @@ docker compose -f opengauss_setup/docker/docker-compose.yml up -d
 ./opengauss_setup/docker/init_db.sh
 ```
 
+如果已有 openGauss 数据库，只想补充持久登录所需的会话表，可执行：
+
+```bash
+docker exec -i course-opengauss bash -lc 'export GAUSSHOME=/usr/local/opengauss; export PATH="$GAUSSHOME/bin:$PATH"; export LD_LIBRARY_PATH="$GAUSSHOME/lib:${LD_LIBRARY_PATH:-}"; gsql -v ON_ERROR_STOP=1 -U gaussdb --password Secretpassword@123 -d course_system -p 5432' < opengauss_setup/sql/add_user_session.sql
+```
+
 ---
 
 ### 第二步：创建并激活 Python 环境
@@ -222,6 +229,8 @@ http://localhost:8501
 ```
 
 当前项目只要求 Streamlit 监听 `8501`，不需要把 openGauss 数据库端口暴露到公网。
+
+登录状态通过浏览器 Cookie 中的随机 token 和数据库 `user_session` 表共同维护。刷新页面会自动恢复登录；退出登录会撤销服务端会话并清除 Cookie。
 
 ---
 

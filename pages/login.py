@@ -1,5 +1,7 @@
 import streamlit as st
-from services.auth_service import login, get_student_id, get_teacher_id
+from services.auth_service import create_session, login
+from utils.auth_cookie import set_auth_cookie
+from utils.session_state import apply_login_state
 
 def render() -> None:
     _, col, _ = st.columns([1, 2, 1])
@@ -18,15 +20,11 @@ def render() -> None:
             else:
                 user = login(username, password)
                 if user:
-                    st.session_state.logged_in  = True
-                    st.session_state.user_id    = user["user_id"]
-                    st.session_state.username   = user["username"]
-                    st.session_state.role       = user["role"]
-                    if user["role"] == "student":
-                        st.session_state.student_id = get_student_id(user["user_id"])
-                    elif user["role"] == "teacher":
-                        st.session_state.teacher_id = get_teacher_id(user["user_id"])
-                    st.rerun()
+                    token = create_session(user["user_id"])
+                    apply_login_state(user, token)
+                    set_auth_cookie(token)
+                    st.success("登录成功，正在进入系统...")
+                    st.stop()
                 else:
                     st.error("用户名或密码错误，或账号已被禁用")
 

@@ -5,4 +5,4 @@ __pycache__/
 *.py[cod]
 sql
 !opengauss_setup/sql/
-!opengauss_setup/sql/init.sql
+!opengauss_setup/sql/*.sql
