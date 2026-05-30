@@ -1,2 +1,8 @@
 *.png
 .claude
+.venv/
+__pycache__/
+*.py[cod]
+sql
+!opengauss_setup/sql/
+!opengauss_setup/sql/*.sql

@@ -73,7 +73,7 @@ def enroll(student_id: str, offering_id: int) -> tuple[bool, str]:
                 return False, "当前学期未开放选课"
             if offering["selection_start"] and offering["selection_end"]:
                 window_ok = query_one(
-                    "SELECT NOW() BETWEEN %s AND %s AS in_window",
+                    "SELECT CURRENT_TIMESTAMP BETWEEN %s AND %s AS in_window",
                     (offering["selection_start"], offering["selection_end"]),
                 )
                 if not window_ok or not window_ok["in_window"]:
@@ -84,7 +84,7 @@ def enroll(student_id: str, offering_id: int) -> tuple[bool, str]:
             if not ok:
                 return False, msg
             execute(
-                "UPDATE enrollment SET status='selected', select_time=NOW() "
+                "UPDATE enrollment SET status='selected', select_time=CURRENT_TIMESTAMP "
                 "WHERE enrollment_id=%s",
                 (existing["enrollment_id"],),
             )
@@ -108,7 +108,7 @@ def enroll(student_id: str, offering_id: int) -> tuple[bool, str]:
         return False, "该课程班次已关闭，不允许选课"
     if offering["selection_start"] and offering["selection_end"]:
         window_ok = query_one(
-            "SELECT NOW() BETWEEN %s AND %s AS in_window",
+            "SELECT CURRENT_TIMESTAMP BETWEEN %s AND %s AS in_window",
             (offering["selection_start"], offering["selection_end"]),
         )
         if not window_ok or not window_ok["in_window"]:
@@ -122,7 +122,7 @@ def enroll(student_id: str, offering_id: int) -> tuple[bool, str]:
     try:
         execute(
             "INSERT INTO enrollment (student_id, offering_id, status, select_time) "
-            "VALUES (%s,%s,'selected',NOW())",
+            "VALUES (%s,%s,'selected',CURRENT_TIMESTAMP)",
             (student_id, offering_id),
         )
         return True, ""
@@ -153,7 +153,7 @@ def drop(enrollment_id: int, student_id: str) -> tuple[bool, str]:
         return False, "当前学期未开放退课"
     if row["selection_start"] and row["selection_end"]:
         window_ok = query_one(
-            "SELECT NOW() BETWEEN %s AND %s AS in_window",
+            "SELECT CURRENT_TIMESTAMP BETWEEN %s AND %s AS in_window",
             (row["selection_start"], row["selection_end"]),
         )
         if not window_ok or not window_ok["in_window"]:

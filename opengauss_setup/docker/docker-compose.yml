@@ -1,0 +1,17 @@
+services:
+  opengauss:
+    image: enmotech/opengauss-lite:latest
+    container_name: course-opengauss
+    privileged: true
+    environment:
+      GS_USERNAME: gaussdb
+      GS_PASSWORD: Secretpassword@123
+      TZ: Asia/Shanghai
+    ports:
+      - "15432:5432"
+    volumes:
+      - course-opengauss-data:/var/lib/opengauss
+    restart: unless-stopped
+
+volumes:
+  course-opengauss-data:
