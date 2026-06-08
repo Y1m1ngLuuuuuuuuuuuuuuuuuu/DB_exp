@@ -30,13 +30,10 @@ def render() -> None:
         st.subheader("各班次选课情况（最近学期）")
         rows = query(
             """
-            SELECT c.course_name, t.teacher_name,
-                   co.selected_count, co.max_capacity, s.semester_name
-            FROM course_offering co
-            JOIN course   c ON co.course_id   = c.course_id
-            JOIN teacher  t ON co.teacher_id  = t.teacher_id
-            JOIN semester s ON co.semester_id = s.semester_id
-            ORDER BY s.start_date DESC, co.selected_count DESC
+            SELECT course_name, teacher_name, selected_count,
+                   max_capacity, semester_name
+            FROM v_course_offering_detail
+            ORDER BY semester_id DESC, selected_count DESC
             LIMIT 12
             """
         )

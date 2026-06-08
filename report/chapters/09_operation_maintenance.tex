@@ -1,0 +1,45 @@
+\chapter{系统运行、维护与数据库管理}
+
+\section{数据库初始化与部署}
+
+openGauss 本地部署由 \code{opengauss_setup/docker/start_opengauss.sh} 和 \code{init_db.sh} 完成。前者启动 Docker 容器并调用初始化脚本，后者负责等待数据库可连接、重建 \code{course_system} 数据库、导入 \code{opengauss_setup/sql/init.sql}，并继续执行 \code{migrate_triggers_constraints_20260608.sql} 以安装约束、触发器、函数和视图。
+
+这种方式便于课程演示和本地复现，但正式环境应避免随意重建数据库，建议使用迁移脚本和备份策略管理结构变更。
+
+\section{迁移脚本与部署顺序}
+
+当前数据库结构由三个关键脚本体现演进过程：\code{init.sql} 定义基础表、主键、外键、样例数据和基础索引；\code{migrate_3nf_20260608.sql} 将旧结构迁移到 3NF，包括拆分 \code{course_schedule} 并删除 \code{schedule_text}、\code{selected_count} 和 \code{gpa_point}；\code{migrate_triggers_constraints_20260608.sql} 在 3NF 结构基础上补充业务唯一约束、CHECK、触发器、存储函数、视图和审计索引。
+
+部署顺序需要遵循“基础表与数据先就绪，再安装复杂约束和触发器”的原则。原因是触发器会主动检查容量、角色和选课窗口，如果在样例数据修正前启用，可能导致初始化数据导入失败。当前迁移脚本在添加容量触发器前会修正已有样例数据中教学班容量超过教室容量的问题。
+
+\section{测试脚本与验证}
+
+\code{opengauss_setup/sql/test_triggers_constraints.sql} 是本轮数据库层规则的回滚型验证脚本。它在一个事务中构造测试数据，覆盖角色错配、先修自指、先修环路、容量超选、时间冲突、重复选课、成绩审计、退课限制和视图查询，最后执行 \code{ROLLBACK}，不会污染样例数据。该脚本的存在使触发器和约束不仅停留在设计说明中，而是可以被重复验证。
+
+\section{权限管理}
+
+应用层权限主要通过 \code{user_account.role}、页面守卫 \code{require_role()} 和服务层权限检查实现。教师成绩管理中，\code{score_service.can_manage_offering_score()} 会检查教师只能维护本人负责的开课班次；管理员具有全局维护能力。
+
+当前项目尚未实现数据库级角色授权，例如为学生、教师、管理员分别建立数据库账号并授予最小权限。报告中应如实说明：当前权限主要是应用层权限，数据库层权限管理是后续改进方向。
+
+\section{日志审计}
+
+成绩修改日志由 \code{score_change_log} 表保存，记录 \code{enrollment_id}、旧成绩、新成绩、修改人、修改时间和原因。该设计保留了成绩变更历史，避免成绩被覆盖后无法追溯。本轮已经通过 \code{trg_score_change_log} 实现数据库触发器自动写日志；服务层在成绩更新事务中设置当前操作者和修改原因，触发器负责写入审计记录。
+
+\section{异常处理与一致性维护}
+
+\code{DBSession} 对异常进行回滚，是当前项目一致性维护的重要基础。学生和教师创建流程、开课班次创建与更新时间片、选课、退课和成绩更新流程都使用事务。服务层函数通常返回 \code{(bool, message)}，页面根据返回结果提示用户。
+
+数据库层触发器抛出的异常会被服务层捕获并转换为用户可以理解的提示。例如，\code{selection_service.py} 将容量已满、时间冲突、先修课程未完成等数据库异常映射为中文提示；\code{score_service.py} 将缺少 \code{app.current_user_id} 的成绩更新异常映射为审计上下文缺失提示。仍需补充的异常处理包括：数据库连接失败提示、迁移失败回滚策略、删除课程或学生时历史记录的保留策略等。
+
+\section{视图与查询维护}
+
+\code{v_offering_selected_count}、\code{v_course_offering_detail} 和 \code{v_student_timetable} 把多表连接和聚合统计封装在数据库层，降低了应用层重复编写 JOIN 的成本。由于视图不存储派生数据，它们不会破坏 3NF；同时，底层索引支持容量统计、课程列表和课表查询，便于后续维护和性能调优。
+
+\section{数据安全}
+
+项目中密码以 SHA-256 哈希保存，持久登录 token 以哈希形式存入 \code{user_session}。这比明文保存更安全，但仍可继续改进，例如使用带盐的密码哈希算法、限制登录尝试次数、设置 HTTPS、定期清理过期会话。
+
+\section{后续扩展}
+
+后续可扩展方向包括：行政班实体拆分、绩点规则版本化、数据库用户权限、备份恢复脚本、运行监控、并发压测和报表优化。这些内容可以作为运行维护阶段的设计完善点。

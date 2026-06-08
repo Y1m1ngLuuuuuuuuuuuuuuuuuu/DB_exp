@@ -106,12 +106,14 @@ def render() -> None:
                     if saved:
                         st.rerun()
 
+                st.divider()
+                st.subheader("成绩分布")
                 dist = get_score_distribution(sel_oid)
                 if dist:
-                    st.divider()
-                    st.subheader("成绩分布")
                     dist_df = pd.DataFrame(list(dist.items()), columns=["分数段", "人数"])
                     st.bar_chart(dist_df.set_index("分数段"))
+                else:
+                    st.info("当前班次暂无已保存成绩，保存后会显示分布图。")
 
     with tab_log:
         logs = get_score_change_log(offering_id=sel_oid)

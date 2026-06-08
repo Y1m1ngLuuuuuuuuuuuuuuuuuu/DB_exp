@@ -1,4 +1,6 @@
 *.png
+!report/figures/*.png
+.DS_Store
 .claude
 .venv/
 __pycache__/
@@ -6,3 +8,7 @@ __pycache__/
 sql
 !opengauss_setup/sql/
 !opengauss_setup/sql/*.sql
+report/*.aux
+report/*.log
+report/*.out
+report/*.toc

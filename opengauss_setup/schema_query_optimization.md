@@ -4,18 +4,19 @@
 基线快照：`snapshot/opengauss-before-optimization-20260511` / `cd8d6ea`  
 范围：基于当前 openGauss 迁移版代码和 `opengauss_setup/sql/init.sql` 做设计评审，不直接修改业务代码。
 
-## 当前结论
+更新说明：2026-06-08 已执行 3NF 方向重构，新增 `course_schedule`，删除 `course_offering.selected_count`、`course_offering.schedule_text` 和 `enrollment.gpa_point`。本文中关于这些字段的建议可视为旧版设计评审记录；当前结构以 `opengauss_setup/sql/init.sql` 和 `docs/THIRD_NORMAL_FORM_REFACTOR.md` 为准。
 
-项目当前表结构已经能支撑选课系统的核心流程，主键、唯一约束、外键和 `CHECK` 约束也比较完整。下一步优化的重点不是继续拆表，而是补充访问路径、明确冗余字段语义、把关键写流程放进事务，并改写几条会随着数据量增长变慢的查询。
+
+## 当前结论项目当前表结构已经能支撑选课系统的核心流程，主键、唯一约束、外键和 `CHECK` 约束也比较完整。下一步优化的重点不是继续拆表，而是补充访问路径、明确冗余字段语义、把关键写流程放进事务，并改写几条会随着数据量增长变慢的查询。
 
 建议优先级：
 
 1. 给外键、状态过滤、排序字段补二级索引。
 2. 将选课、退课、成绩录入的多步写操作放进同一个事务。
+
 3. 明确 `course_offering.selected_count` 的语义，并让触发器覆盖所有会改变人数的状态迁移。
 4. 改写 `NOT IN`、多次统计查询、成绩分布查询等热点 SQL。
 5. 再考虑更大的模式设计升级，例如课程时间表规范化、重修规则建模、码表化状态字段。
-
 ## 一、模式设计优化
 
 ### 1. 为外键列补索引
@@ -26,22 +27,23 @@ openGauss 会为主键和唯一约束创建索引，但不会自动为所有外�
 
 ```sql
 CREATE INDEX idx_major_dept ON major (dept_id);
+
 CREATE INDEX idx_student_major ON student (major_id);
 CREATE INDEX idx_teacher_dept ON teacher (dept_id);
 CREATE INDEX idx_course_dept ON course (dept_id);
-
 CREATE INDEX idx_offering_course ON course_offering (course_id);
 CREATE INDEX idx_offering_semester ON course_offering (semester_id);
+
 CREATE INDEX idx_offering_teacher ON course_offering (teacher_id);
 CREATE INDEX idx_offering_classroom ON course_offering (classroom_id);
-
 CREATE INDEX idx_enrollment_offering ON enrollment (offering_id);
 CREATE INDEX idx_prereq_prereq_course ON course_prerequisite (prereq_course_id);
+
 CREATE INDEX idx_score_log_enrollment ON score_change_log (enrollment_id);
 CREATE INDEX idx_score_log_changed_by ON score_change_log (changed_by_user_id);
 ```
-
 说明：`student.user_id`、`teacher.user_id`、`admin_profile.user_id`、`user_account.username` 已经有唯一约束，不需要重复建普通索引。
+
 
 ### 2. 为业务高频筛选建立组合索引
 
@@ -220,7 +222,7 @@ course_offering.max_capacity <= classroom.capacity
 
 ### 9. 状态字段：当前 CHECK 足够，码表是增强项
 
-当前用 `VARCHAR + CHECK` 模拟枚举，例如 `role`、`status`、`course_type`。这比 MySQL `ENUM` 更可迁移，也便于 openGauss 运行。
+当前用 `VARCHAR + CHECK` 模拟枚举，例如 `role`、`status`、`course_type`。这种方式可迁移性更好，也便于 openGauss 运行。
 
 如果后续要做后台可配置状态、展示中文名、排序权重，可以改为码表：
 

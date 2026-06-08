@@ -1,6 +1,7 @@
 DROP TABLE IF EXISTS score_change_log CASCADE;
 DROP TABLE IF EXISTS enrollment CASCADE;
 DROP TABLE IF EXISTS course_prerequisite CASCADE;
+DROP TABLE IF EXISTS course_schedule CASCADE;
 DROP TABLE IF EXISTS course_offering CASCADE;
 DROP TABLE IF EXISTS classroom CASCADE;
 DROP TABLE IF EXISTS course CASCADE;
@@ -12,9 +13,6 @@ DROP TABLE IF EXISTS user_session CASCADE;
 DROP TABLE IF EXISTS user_account CASCADE;
 DROP TABLE IF EXISTS major CASCADE;
 DROP TABLE IF EXISTS department CASCADE;
-
-DROP FUNCTION IF EXISTS trg_enrollment_insert_fn() CASCADE;
-DROP FUNCTION IF EXISTS trg_enrollment_update_fn() CASCADE;
 
 CREATE TABLE department (
     dept_id         VARCHAR(10)  NOT NULL,
@@ -155,8 +153,6 @@ CREATE TABLE course_offering (
     teacher_id     VARCHAR(20)  NOT NULL,
     classroom_id   VARCHAR(20),
     max_capacity   INTEGER      NOT NULL DEFAULT 60,
-    selected_count INTEGER      NOT NULL DEFAULT 0,
-    schedule_text  VARCHAR(200),
     status         VARCHAR(20)  NOT NULL DEFAULT 'open',
     PRIMARY KEY (offering_id),
     CONSTRAINT fk_offering_course    FOREIGN KEY (course_id)    REFERENCES course (course_id),
@@ -164,8 +160,21 @@ CREATE TABLE course_offering (
     CONSTRAINT fk_offering_teacher   FOREIGN KEY (teacher_id)   REFERENCES teacher (teacher_id),
     CONSTRAINT fk_offering_classroom FOREIGN KEY (classroom_id) REFERENCES classroom (classroom_id),
     CONSTRAINT chk_offering_status CHECK (status IN ('open','closed','cancelled')),
-    CONSTRAINT chk_max_capacity CHECK (max_capacity > 0),
-    CONSTRAINT chk_selected_count CHECK (selected_count >= 0)
+    CONSTRAINT chk_max_capacity CHECK (max_capacity > 0)
+);
+
+CREATE TABLE course_schedule (
+    schedule_id   BIGSERIAL   NOT NULL,
+    offering_id   BIGINT      NOT NULL,
+    weekday       SMALLINT    NOT NULL,
+    start_section SMALLINT    NOT NULL,
+    end_section   SMALLINT    NOT NULL,
+    PRIMARY KEY (schedule_id),
+    CONSTRAINT fk_schedule_offering FOREIGN KEY (offering_id)
+        REFERENCES course_offering (offering_id) ON DELETE CASCADE,
+    CONSTRAINT uq_schedule_slot UNIQUE (offering_id, weekday, start_section, end_section),
+    CONSTRAINT chk_schedule_weekday CHECK (weekday BETWEEN 1 AND 7),
+    CONSTRAINT chk_schedule_section CHECK (start_section > 0 AND end_section >= start_section)
 );
 
 CREATE TABLE course_prerequisite (
@@ -183,15 +192,13 @@ CREATE TABLE enrollment (
     select_time   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     status        VARCHAR(20)  NOT NULL DEFAULT 'selected',
     final_score   DECIMAL(5,2),
-    gpa_point     DECIMAL(3,2),
     remark        VARCHAR(200),
     PRIMARY KEY (enrollment_id),
     CONSTRAINT uq_student_offering UNIQUE (student_id, offering_id),
     CONSTRAINT fk_enrollment_student  FOREIGN KEY (student_id)  REFERENCES student (student_id),
     CONSTRAINT fk_enrollment_offering FOREIGN KEY (offering_id) REFERENCES course_offering (offering_id),
     CONSTRAINT chk_enrollment_status CHECK (status IN ('selected','dropped','completed')),
-    CONSTRAINT chk_final_score CHECK (final_score IS NULL OR (final_score >= 0 AND final_score <= 100)),
-    CONSTRAINT chk_gpa_point CHECK (gpa_point IS NULL OR (gpa_point >= 0 AND gpa_point <= 5))
+    CONSTRAINT chk_final_score CHECK (final_score IS NULL OR (final_score >= 0 AND final_score <= 100))
 );
 
 CREATE TABLE score_change_log (
@@ -206,47 +213,6 @@ CREATE TABLE score_change_log (
     CONSTRAINT fk_log_enrollment FOREIGN KEY (enrollment_id)      REFERENCES enrollment (enrollment_id),
     CONSTRAINT fk_log_user       FOREIGN KEY (changed_by_user_id) REFERENCES user_account (user_id)
 );
-
-CREATE OR REPLACE FUNCTION trg_enrollment_insert_fn()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.status = 'selected' THEN
-        UPDATE course_offering
-        SET selected_count = selected_count + 1
-        WHERE offering_id = NEW.offering_id;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_enrollment_insert
-AFTER INSERT ON enrollment
-FOR EACH ROW
-EXECUTE PROCEDURE trg_enrollment_insert_fn();
-
-CREATE OR REPLACE FUNCTION trg_enrollment_update_fn()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF OLD.status = 'selected' AND NEW.status = 'dropped' THEN
-        UPDATE course_offering
-        SET selected_count = GREATEST(selected_count - 1, 0)
-        WHERE offering_id = NEW.offering_id;
-    END IF;
-
-    IF OLD.status = 'dropped' AND NEW.status = 'selected' THEN
-        UPDATE course_offering
-        SET selected_count = selected_count + 1
-        WHERE offering_id = NEW.offering_id;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_enrollment_update
-AFTER UPDATE ON enrollment
-FOR EACH ROW
-EXECUTE PROCEDURE trg_enrollment_update_fn();
 
 INSERT INTO department (dept_id, dept_name, office_phone, office_location) VALUES
 ('CS',  '计算机学院',   '010-88881111', '综合楼 A301'),
@@ -379,16 +345,34 @@ INSERT INTO classroom (classroom_id, building, room_no, capacity) VALUES
 ('M201', '数理楼', '201', 50),
 ('M301', '数理楼', '301', 40);
 
-INSERT INTO course_offering (course_id, semester_id, teacher_id, classroom_id, max_capacity, schedule_text) VALUES
-('CS101', '2025-2026-2', 'T001', 'C101', 60, '周一 1-2 节 / 周三 3-4 节'),
-('CS201', '2025-2026-2', 'T001', 'C201', 40, '周二 3-4 节 / 周四 5-6 节'),
-('CS221', '2025-2026-2', 'T003', 'C201', 40, '周五 1-2 节 / 周五 3-4 节'),
-('CS301', '2025-2026-2', 'T003', 'C301', 30, '周三 1-2 节 / 周四 1-2 节'),
-('MA101', '2025-2026-2', 'T002', 'M201', 60, '周一 5-6 节 / 周五 1-2 节'),
-('MA201', '2025-2026-2', 'T004', 'M301', 40, '周二 1-2 节 / 周四 3-4 节'),
-('MA301', '2025-2026-2', 'T004', 'M301', 40, '周三 5-6 节 / 周五 5-6 节'),
-('CS401', '2025-2026-2', 'T001', 'C301', 30, '周三 7-8 节'),
-('CS402', '2025-2026-2', 'T003', 'C301', 30, '周二 7-8 节');
+INSERT INTO course_offering (course_id, semester_id, teacher_id, classroom_id, max_capacity) VALUES
+('CS101', '2025-2026-2', 'T001', 'C101', 60),
+('CS201', '2025-2026-2', 'T001', 'C201', 40),
+('CS221', '2025-2026-2', 'T003', 'C201', 40),
+('CS301', '2025-2026-2', 'T003', 'C301', 30),
+('MA101', '2025-2026-2', 'T002', 'M201', 50),
+('MA201', '2025-2026-2', 'T004', 'M301', 40),
+('MA301', '2025-2026-2', 'T004', 'M301', 40),
+('CS401', '2025-2026-2', 'T001', 'C301', 30),
+('CS402', '2025-2026-2', 'T003', 'C301', 30);
+
+INSERT INTO course_schedule (offering_id, weekday, start_section, end_section) VALUES
+(1, 1, 1, 2),
+(1, 3, 3, 4),
+(2, 2, 3, 4),
+(2, 4, 5, 6),
+(3, 5, 1, 2),
+(3, 5, 3, 4),
+(4, 3, 1, 2),
+(4, 4, 1, 2),
+(5, 1, 5, 6),
+(5, 5, 1, 2),
+(6, 2, 1, 2),
+(6, 4, 3, 4),
+(7, 3, 5, 6),
+(7, 5, 5, 6),
+(8, 3, 7, 8),
+(9, 2, 7, 8);
 
 INSERT INTO enrollment (student_id, offering_id, status) VALUES
 ('20240001', 1, 'selected'),
@@ -416,18 +400,35 @@ INSERT INTO enrollment (student_id, offering_id, status) VALUES
 ('20240012', 5, 'selected'),
 ('20240012', 9, 'selected');
 
-INSERT INTO course_offering (course_id, semester_id, teacher_id, classroom_id, max_capacity, schedule_text, status) VALUES
-('CS101', '2025-2026-1', 'T001', 'C101', 60, '周一 1-2 节', 'closed'),
-('MA101', '2025-2026-1', 'T002', 'M201', 60, '周二 3-4 节', 'closed'),
-('MA201', '2025-2026-1', 'T004', 'M301', 40, '周四 1-2 节', 'closed');
+INSERT INTO course_offering (course_id, semester_id, teacher_id, classroom_id, max_capacity, status) VALUES
+('CS101', '2025-2026-1', 'T001', 'C101', 60, 'closed'),
+('MA101', '2025-2026-1', 'T002', 'M201', 50, 'closed'),
+('MA201', '2025-2026-1', 'T004', 'M301', 40, 'closed');
 
-INSERT INTO enrollment (student_id, offering_id, status, final_score, gpa_point) VALUES
-('20240001', 10, 'completed', 88.0, 3.5),
-('20240002', 10, 'completed', 92.0, 4.0),
-('20240003', 10, 'completed', 75.0, 3.0),
-('20240009', 11, 'completed', 91.0, 4.0),
-('20240010', 11, 'completed', 84.0, 3.3),
-('20240011', 11, 'completed', 78.0, 3.0),
-('20240009', 12, 'completed', 87.0, 3.7),
-('20240010', 12, 'completed', 82.0, 3.3),
-('20240012', 12, 'completed', 73.0, 2.3);
+INSERT INTO course_schedule (offering_id, weekday, start_section, end_section) VALUES
+(10, 1, 1, 2),
+(11, 2, 3, 4),
+(12, 4, 1, 2);
+
+INSERT INTO enrollment (student_id, offering_id, status, final_score) VALUES
+('20240001', 10, 'completed', 88.0),
+('20240002', 10, 'completed', 92.0),
+('20240003', 10, 'completed', 75.0),
+('20240009', 11, 'completed', 91.0),
+('20240010', 11, 'completed', 84.0),
+('20240011', 11, 'completed', 78.0),
+('20240009', 12, 'completed', 87.0),
+('20240010', 12, 'completed', 82.0),
+('20240012', 12, 'completed', 73.0);
+
+CREATE INDEX idx_offering_course_semester ON course_offering (course_id, semester_id);
+CREATE INDEX idx_offering_teacher_semester ON course_offering (teacher_id, semester_id);
+CREATE INDEX idx_schedule_offering ON course_schedule (offering_id);
+CREATE INDEX idx_schedule_time ON course_schedule (weekday, start_section, end_section);
+CREATE INDEX idx_enrollment_student_status ON enrollment (student_id, status);
+CREATE INDEX idx_enrollment_offering_status ON enrollment (offering_id, status);
+
+-- Clean database initialization should be followed by
+-- opengauss_setup/sql/migrate_triggers_constraints_20260608.sql.
+-- opengauss_setup/docker/init_db.sh applies that migration automatically so
+-- constraints, triggers, functions, and reporting views are present after setup.

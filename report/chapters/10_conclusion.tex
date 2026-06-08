@@ -1,0 +1,36 @@
+\chapter{总结与不足}
+
+\section{系统设计总结}
+
+本项目围绕高校选课业务建立了较完整的关系数据库模型。系统区分课程定义和开课班次，使用 \code{enrollment} 转换学生与教学班之间的多对多联系，使用 \code{course_schedule} 结构化表达上课时间片，并通过 \code{course_prerequisite} 表示课程先修自关联。当前数据库结构由 \code{opengauss_setup/sql/init.sql} 和后续迁移脚本维护，共包含 15 张主要表。
+
+\section{课程知识点体现}
+
+项目较好体现了数据库原理2的多个重点内容：
+
+\begin{enumerate}
+  \item 数据库设计流程：报告按规划、需求、概念、逻辑、规范化、物理和运行维护展开。
+  \item ER 建模：实体、属性、联系和基数均能从真实表结构中抽取。
+  \item 关系模型：M:N 联系通过 \code{enrollment} 和 \code{course_prerequisite} 转换为关系模式。
+  \item 规范化：通过删除 \code{schedule_text}、\code{selected_count}、\code{gpa_point} 等风险字段，核心表更接近 3NF。
+  \item 完整性：主键、外键、唯一约束、CHECK、DEFAULT 和触发器共同维护数据正确性。
+  \item 事务与锁：选课流程使用 \code{select_course_tx()}、\code{DBSession} 和 \code{SELECT ... FOR UPDATE} 控制并发。
+  \item 物理设计：项目为会话、教学班、时间片、选课记录和成绩日志建立了常用索引，并用视图提升查询便利性。
+  \item 测试验证：\code{test_triggers_constraints.sql} 覆盖容量、时间冲突、重复选课、先修关系、成绩审计和视图查询等数据库规则。
+\end{enumerate}
+
+\section{项目不足}
+
+当前不足主要包括：同课跨班重复选择限制尚未完全固化；数据库级权限、备份恢复、运行监控和多连接并发压测还不完善；当前使用普通视图而非物化视图，统计报表在数据量很大时仍需进一步评估性能。
+
+\section{后续改进}
+
+如果继续完善项目，优先级较高的数据库相关功能包括：
+
+\begin{enumerate}
+  \item 为同课跨班重复选择设计跨表触发器或培养方案规则表。
+  \item 增加多连接并发压测，验证最后一个名额抢课时的锁等待和回滚行为。
+  \item 建立更完整的数据库管理方案，包括数据库级角色权限、备份恢复和迁移版本管理。
+\end{enumerate}
+
+总体而言，本项目已经不是简单的页面 CRUD 程序，而是能够体现数据库设计流程、范式理论、完整性约束、事务锁机制和运行维护思路的数据库应用系统。报告中的不足部分也说明数据库设计需要随着业务规则和运行环境持续迭代。

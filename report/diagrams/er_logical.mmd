@@ -1,0 +1,128 @@
+erDiagram
+    DEPARTMENT ||--o{ MAJOR : "dept_id"
+    DEPARTMENT ||--o{ TEACHER : "dept_id"
+    DEPARTMENT ||--o{ COURSE : "dept_id"
+    USER_ACCOUNT ||--o| STUDENT : "user_id"
+    USER_ACCOUNT ||--o| TEACHER : "user_id"
+    USER_ACCOUNT ||--o| ADMIN_PROFILE : "user_id"
+    USER_ACCOUNT ||--o{ USER_SESSION : "user_id"
+    MAJOR ||--o{ STUDENT : "major_id"
+    COURSE ||--o{ COURSE_OFFERING : "course_id"
+    SEMESTER ||--o{ COURSE_OFFERING : "semester_id"
+    TEACHER ||--o{ COURSE_OFFERING : "teacher_id"
+    CLASSROOM ||--o{ COURSE_OFFERING : "classroom_id"
+    COURSE_OFFERING ||--o{ COURSE_SCHEDULE : "offering_id"
+    STUDENT ||--o{ ENROLLMENT : "student_id"
+    COURSE_OFFERING ||--o{ ENROLLMENT : "offering_id"
+    COURSE ||--o{ COURSE_PREREQUISITE : "course_id"
+    COURSE ||--o{ COURSE_PREREQUISITE : "prereq_course_id"
+    ENROLLMENT ||--o{ SCORE_CHANGE_LOG : "enrollment_id"
+    USER_ACCOUNT ||--o{ SCORE_CHANGE_LOG : "changed_by_user_id"
+
+    DEPARTMENT {
+        varchar dept_id_pk
+        varchar dept_name
+    }
+    MAJOR {
+        varchar major_id_pk
+        varchar major_name
+        varchar dept_id_fk
+    }
+    USER_ACCOUNT {
+        bigserial user_id_pk
+        varchar username_uk
+        varchar password_hash
+        varchar role
+        varchar status
+        timestamp created_at
+    }
+    USER_SESSION {
+        bigserial session_id_pk
+        bigint user_id_fk
+        varchar token_hash_uk
+        timestamp expires_at
+        timestamp revoked_at
+    }
+    STUDENT {
+        varchar student_id_pk
+        bigint user_id_fk_uk
+        varchar student_name
+        varchar major_id_fk
+        varchar class_name
+        varchar status
+    }
+    TEACHER {
+        varchar teacher_id_pk
+        bigint user_id_fk_uk
+        varchar teacher_name
+        varchar dept_id_fk
+        varchar title
+        varchar status
+    }
+    ADMIN_PROFILE {
+        varchar admin_id_pk
+        bigint user_id_fk_uk
+        varchar admin_name
+    }
+    SEMESTER {
+        varchar semester_id_pk
+        varchar semester_name
+        date start_date
+        date end_date
+        timestamp selection_start
+        timestamp selection_end
+        varchar status
+    }
+    COURSE {
+        varchar course_id_pk
+        varchar course_name
+        varchar course_type
+        decimal credit
+        integer total_hours
+        varchar dept_id_fk
+        varchar status
+    }
+    CLASSROOM {
+        varchar classroom_id_pk
+        varchar building
+        varchar room_no
+        integer capacity
+    }
+    COURSE_OFFERING {
+        bigserial offering_id_pk
+        varchar course_id_fk
+        varchar semester_id_fk
+        varchar teacher_id_fk
+        varchar classroom_id_fk
+        integer max_capacity
+        varchar status
+    }
+    COURSE_SCHEDULE {
+        bigserial schedule_id_pk
+        bigint offering_id_fk
+        smallint weekday
+        smallint start_section
+        smallint end_section
+    }
+    ENROLLMENT {
+        bigserial enrollment_id_pk
+        varchar student_id_fk
+        bigint offering_id_fk
+        timestamp select_time
+        varchar status
+        decimal final_score
+        varchar remark
+    }
+    COURSE_PREREQUISITE {
+        varchar course_id_pk_fk
+        varchar prereq_course_id_pk_fk
+    }
+    SCORE_CHANGE_LOG {
+        bigserial log_id_pk
+        bigint enrollment_id_fk
+        decimal old_score
+        decimal new_score
+        bigint changed_by_user_id_fk
+        timestamp changed_at
+        varchar reason
+    }

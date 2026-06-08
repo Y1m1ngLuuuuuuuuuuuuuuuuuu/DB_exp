@@ -1,0 +1,100 @@
+\chapter{逻辑结构设计}
+
+\section{关系模式}
+
+由概念模型转换得到的主要关系模式如下。表名和字段均依据 \code{opengauss_setup/sql/init.sql}。
+
+\begin{itemize}
+  \item \code{Department(dept_id, dept_name, office_phone, office_location)}
+  \item \code{Major(major_id, major_name, dept_id)}
+  \item \code{UserAccount(user_id, username, password_hash, role, status, last_login_at, created_at)}
+  \item \code{UserSession(session_id, user_id, token_hash, created_at, expires_at, revoked_at, last_seen_at)}
+  \item \code{Student(student_id, user_id, student_name, gender, birth_date, enroll_year, major_id, class_name, phone, email, status)}
+  \item \code{Teacher(teacher_id, user_id, teacher_name, gender, dept_id, title, phone, email, status)}
+  \item \code{AdminProfile(admin_id, user_id, admin_name, phone)}
+  \item \code{Semester(semester_id, semester_name, start_date, end_date, selection_start, selection_end, status)}
+  \item \code{Course(course_id, course_name, course_type, credit, total_hours, dept_id, description, status)}
+  \item \code{Classroom(classroom_id, building, room_no, capacity)}
+  \item \code{CourseOffering(offering_id, course_id, semester_id, teacher_id, classroom_id, max_capacity, status)}
+  \item \code{CourseSchedule(schedule_id, offering_id, weekday, start_section, end_section)}
+  \item \code{CoursePrerequisite(course_id, prereq_course_id)}
+  \item \code{Enrollment(enrollment_id, student_id, offering_id, select_time, status, final_score, remark)}
+  \item \code{ScoreChangeLog(log_id, enrollment_id, old_score, new_score, changed_by_user_id, changed_at, reason)}
+\end{itemize}
+
+\section{关系模式、主键、外键与唯一约束}
+
+\code{init.sql} 为所有核心表设置主键，并通过外键维护主要参照完整性。表 \ref{tab:logical-schema-constraints} 汇总了当前主要关系模式的键约束。
+
+{\footnotesize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.18}
+\begin{longtable}{p{0.17\textwidth}p{0.17\textwidth}p{0.37\textwidth}p{0.20\textwidth}}
+\caption{关系模式、主键、外键与唯一约束}\label{tab:logical-schema-constraints}\\
+\toprule
+关系模式 & 主键 & 主要外键 & 唯一约束 / 候选键 \\
+\midrule
+\endfirsthead
+\toprule
+关系模式 & 主键 & 主要外键 & 唯一约束 / 候选键 \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+
+\code{department} & \code{dept_id} & 无 & \code{UNIQUE(dept_name)} \\
+\code{major} & \code{major_id} & \code{dept_id -> department.dept_id} & \code{UNIQUE(dept_id, major_name)} \\
+\code{user_account} & \code{user_id} & 无 & \code{UNIQUE(username)} \\
+\code{user_session} & \code{session_id} & \code{user_id -> user_account.user_id} & \code{UNIQUE(token_hash)} \\
+\code{student} & \code{student_id} & \code{user_id -> user_account.user_id}；\code{major_id -> major.major_id} & \code{UNIQUE(user_id)} \\
+\code{teacher} & \code{teacher_id} & \code{user_id -> user_account.user_id}；\code{dept_id -> department.dept_id} & \code{UNIQUE(user_id)} \\
+\code{admin_profile} & \code{admin_id} & \code{user_id -> user_account.user_id} & \code{UNIQUE(user_id)} \\
+\code{semester} & \code{semester_id} & 无 & 无显式业务唯一约束 \\
+\code{course} & \code{course_id} & \code{dept_id -> department.dept_id} & 无显式业务唯一约束 \\
+\code{classroom} & \code{classroom_id} & 无 & \code{UNIQUE(building, room_no)} \\
+\code{course_offering} & \code{offering_id} & \code{course_id -> course.course_id}；\code{semester_id -> semester.semester_id}；\code{teacher_id -> teacher.teacher_id}；\code{classroom_id -> classroom.classroom_id} & 无显式复合业务唯一约束 \\
+\code{course_schedule} & \code{schedule_id} & \code{offering_id -> course_offering.offering_id} & \code{UNIQUE(offering_id, weekday, start_section, end_section)} \\
+\code{course_prerequisite} & \code{course_id, prereq_course_id} & 两列均引用 \code{course.course_id} & 复合主键即业务候选键 \\
+\code{enrollment} & \code{enrollment_id} & \code{student_id -> student.student_id}；\code{offering_id -> course_offering.offering_id} & \code{UNIQUE(student_id, offering_id)} \\
+\code{score_change_log} & \code{log_id} & \code{enrollment_id -> enrollment.enrollment_id}；\code{changed_by_user_id -> user_account.user_id} & 无显式业务唯一约束 \\
+
+\end{longtable}
+}
+
+\section{多对多关系转换}
+
+学生与开课班次之间是 M:N。若直接把课程列表保存在学生表中，会产生列表型字段并破坏 1NF；若把学生列表保存在开课班次表中，同样不利于查询和约束。当前设计使用 \code{enrollment} 作为中间表，把 M:N 转换为：
+
+\begin{itemize}
+  \item \code{student} 与 \code{enrollment} 的 1:N；
+  \item \code{course_offering} 与 \code{enrollment} 的 1:N。
+\end{itemize}
+
+同时，\code{enrollment} 自身具有 \code{select_time}、\code{status}、\code{final_score} 和 \code{remark} 等联系属性，因此它不只是简单连接表，也是描述选课过程和成绩结果的业务实体。\code{UNIQUE(student_id, offering_id)} 防止同一学生重复选择同一教学班。
+
+\section{课程定义与开课班次分离}
+
+当前系统已经正确分离 \code{course} 与 \code{course_offering}。\code{course} 保存稳定的课程定义，例如课程名称、课程类型、学分、总学时和所属学院；\code{course_offering} 保存某课程在某学期由某教师、某教室开设的具体教学班次。若二者不分离，则同一课程每次开班都要重复保存课程名、学分、学时等信息，课程定义调整时容易产生更新异常。
+
+\code{semester}、\code{teacher} 和 \code{classroom} 也独立成表，使 \code{course_offering} 只保存外键和班次自身属性 \code{max_capacity}、\code{status}。该设计有利于后续支持同一课程多学期、多教师、多教学班开设。
+
+\section{多值属性与自关联关系处理}
+
+\code{course_schedule} 是 \code{course_offering} 多值时间属性的拆分结果。一个教学班可以有多个上课时间片，因此逻辑设计中将“上课时间”从 \code{course_offering} 中拆出为独立关系，每行表示一个 \code{weekday, start_section, end_section} 组合。这种设计避免了在开课表中保存 \code{schedule_text} 这类复合文本字段。
+
+\code{course_prerequisite} 是 \code{course} 对 \code{course} 的自关联关系。它使用 \code{course_id} 和 \code{prereq_course_id} 作为复合主键，分别引用同一张 \code{course} 表，用于表达一门课程可以有多门先修课程、一门课程也可以作为多门课程的先修课程。
+
+\section{逻辑关系模型图}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.98\textwidth]{er_logical.png}
+    \caption{选课系统逻辑关系模型图}
+    \label{fig:er-logical}
+\end{figure}
+
+\section{参照完整性}
+
+当前系统使用外键保证主要参照完整性。例如，选课记录必须引用存在的学生和教学班；开课班次必须引用存在的课程、学期和教师；上课时间片必须引用存在的开课班次；成绩变更日志必须引用存在的选课记录和操作账号。值得注意的是，\code{user_session.user_id} 和 \code{course_schedule.offering_id} 使用 \code{ON DELETE CASCADE}，分别用于在删除账号时清理会话、在删除无选课记录的教学班时清理时间片。
+
+部分跨表业务规则无法仅靠普通外键表达，当前已经通过触发器补充其中的核心规则：\code{course_offering.max_capacity <= classroom.capacity} 由教学班和教室容量触发器维护，账户角色与具体档案表之间的一致性由角色档案触发器维护。仍需改进的是同一学生同一学期不重复选择同一课程的不同教学班，这类规则需要在后续通过跨表触发器、培养方案规则表或更细的业务键设计实现。

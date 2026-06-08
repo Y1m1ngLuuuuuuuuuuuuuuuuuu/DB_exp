@@ -1,0 +1,127 @@
+erDiagram
+    DEPARTMENT ||--o{ MAJOR : has
+    DEPARTMENT ||--o{ TEACHER : employs
+    DEPARTMENT ||--o{ COURSE : offers
+    USER_ACCOUNT ||--o| STUDENT : authenticates
+    USER_ACCOUNT ||--o| TEACHER : authenticates
+    USER_ACCOUNT ||--o| ADMIN_PROFILE : authenticates
+    USER_ACCOUNT ||--o{ USER_SESSION : owns
+    MAJOR ||--o{ STUDENT : contains
+    COURSE ||--o{ COURSE_OFFERING : opens_as
+    SEMESTER ||--o{ COURSE_OFFERING : schedules
+    TEACHER ||--o{ COURSE_OFFERING : teaches
+    CLASSROOM ||--o{ COURSE_OFFERING : hosts
+    COURSE_OFFERING ||--o{ COURSE_SCHEDULE : has
+    STUDENT ||--o{ ENROLLMENT : selects
+    COURSE_OFFERING ||--o{ ENROLLMENT : receives
+    COURSE ||--o{ COURSE_PREREQUISITE : target
+    COURSE ||--o{ COURSE_PREREQUISITE : prerequisite
+    ENROLLMENT ||--o{ SCORE_CHANGE_LOG : records
+    USER_ACCOUNT ||--o{ SCORE_CHANGE_LOG : changes
+
+    DEPARTMENT {
+        string dept_id_pk
+        string dept_name
+        string office_phone
+        string office_location
+    }
+    MAJOR {
+        string major_id_pk
+        string major_name
+        string dept_id_fk
+    }
+    USER_ACCOUNT {
+        bigint user_id_pk
+        string username_uk
+        string password_hash
+        string role
+        string status
+    }
+    USER_SESSION {
+        bigint session_id_pk
+        bigint user_id_fk
+        string token_hash_uk
+        datetime expires_at
+        datetime revoked_at
+    }
+    STUDENT {
+        string student_id_pk
+        bigint user_id_fk_uk
+        string student_name
+        string major_id_fk
+        string class_name
+        string status
+    }
+    TEACHER {
+        string teacher_id_pk
+        bigint user_id_fk_uk
+        string teacher_name
+        string dept_id_fk
+        string title
+        string status
+    }
+    ADMIN_PROFILE {
+        string admin_id_pk
+        bigint user_id_fk_uk
+        string admin_name
+    }
+    SEMESTER {
+        string semester_id_pk
+        string semester_name
+        date start_date
+        date end_date
+        datetime selection_start
+        datetime selection_end
+        string status
+    }
+    COURSE {
+        string course_id_pk
+        string course_name
+        string course_type
+        decimal credit
+        int total_hours
+        string dept_id_fk
+        string status
+    }
+    CLASSROOM {
+        string classroom_id_pk
+        string building
+        string room_no
+        int capacity
+    }
+    COURSE_OFFERING {
+        bigint offering_id_pk
+        string course_id_fk
+        string semester_id_fk
+        string teacher_id_fk
+        string classroom_id_fk
+        int max_capacity
+        string status
+    }
+    COURSE_SCHEDULE {
+        bigint schedule_id_pk
+        bigint offering_id_fk
+        int weekday
+        int start_section
+        int end_section
+    }
+    ENROLLMENT {
+        bigint enrollment_id_pk
+        string student_id_fk
+        bigint offering_id_fk
+        datetime select_time
+        string status
+        decimal final_score
+    }
+    COURSE_PREREQUISITE {
+        string course_id_pk_fk
+        string prereq_course_id_pk_fk
+    }
+    SCORE_CHANGE_LOG {
+        bigint log_id_pk
+        bigint enrollment_id_fk
+        decimal old_score
+        decimal new_score
+        bigint changed_by_user_id_fk
+        datetime changed_at
+    }

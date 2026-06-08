@@ -1,0 +1,124 @@
+\appendix
+\chapter{关键 SQL 与测试摘录}
+
+\section{选课事务函数摘录}
+
+本系统通过 \code{select_course_tx()} 封装数据库层选课入口。函数在调用方事务中执行，先锁定同一学生同一教学班的既有选课记录，再锁定目标教学班，最终由 \code{trg_enrollment_guard} 完成完整性兜底。
+
+\begin{lstlisting}[style=sqlstyle]
+CREATE OR REPLACE FUNCTION select_course_tx(
+    p_student_id VARCHAR,
+    p_offering_id BIGINT
+) RETURNS BIGINT AS $$
+...
+    PERFORM 1
+    FROM course_offering
+    WHERE offering_id = p_offering_id
+    FOR UPDATE;
+
+    INSERT INTO enrollment (student_id, offering_id, status, select_time)
+    VALUES (p_student_id, p_offering_id, 'selected', CURRENT_TIMESTAMP)
+    RETURNING enrollment_id INTO v_enrollment_id;
+...
+$$ LANGUAGE plpgsql;
+\end{lstlisting}
+
+\section{角色一致性触发器摘录}
+
+角色档案一致性由通用函数和三个触发器共同实现。下面片段说明普通外键之外，系统还会检查账户角色是否与档案表类型匹配。
+
+\begin{lstlisting}[style=sqlstyle]
+CREATE OR REPLACE FUNCTION check_user_role_fn(
+    p_user_id BIGINT,
+    p_expected_role VARCHAR
+) RETURNS void AS $$
+...
+    IF v_role <> p_expected_role THEN
+        RAISE EXCEPTION 'User % role is %, expected %',
+            p_user_id, v_role, p_expected_role;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_student_role_check
+BEFORE INSERT OR UPDATE OF user_id ON student
+FOR EACH ROW
+EXECUTE PROCEDURE trg_profile_role_check_fn('student');
+\end{lstlisting}
+
+\section{选课完整性触发器摘录}
+
+\code{trg_enrollment_guard} 不维护 \code{selected_count}，而是在锁定教学班后统计 \code{enrollment} 中的 \code{selected} 记录数。
+
+\begin{lstlisting}[style=sqlstyle]
+SELECT course_id, semester_id, max_capacity, status
+  INTO v_course_id, v_semester_id, v_max_capacity, v_offering_status
+FROM course_offering
+WHERE offering_id = NEW.offering_id
+FOR UPDATE;
+
+SELECT COUNT(*) INTO v_selected_count
+FROM enrollment e
+WHERE e.offering_id = NEW.offering_id
+  AND e.status = 'selected'
+  AND (v_old_enrollment_id IS NULL OR e.enrollment_id <> v_old_enrollment_id);
+
+IF v_selected_count >= v_max_capacity THEN
+    RAISE EXCEPTION 'Course offering % is full', NEW.offering_id;
+END IF;
+\end{lstlisting}
+
+\section{成绩审计触发器摘录}
+
+成绩审计触发器要求业务层在同一事务中传入当前操作者，避免把日志操作者写死为管理员或空值。
+
+\begin{lstlisting}[style=sqlstyle]
+BEGIN
+    v_changed_by_user_id := current_setting('app.current_user_id')::BIGINT;
+EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION
+      'Score update requires app.current_user_id in the current transaction';
+END;
+
+INSERT INTO score_change_log
+    (enrollment_id, old_score, new_score, changed_by_user_id, reason)
+VALUES
+    (NEW.enrollment_id, OLD.final_score, NEW.final_score,
+     v_changed_by_user_id, v_reason);
+\end{lstlisting}
+
+\section{视图 SQL 摘录}
+
+\code{v_offering_selected_count} 通过聚合实时得到已选人数和剩余容量，替代基础表中的派生字段 \code{selected_count}。
+
+\begin{lstlisting}[style=sqlstyle]
+CREATE OR REPLACE VIEW v_offering_selected_count AS
+SELECT
+    co.offering_id,
+    co.max_capacity,
+    COALESCE(COUNT(e.enrollment_id), 0)::INTEGER AS selected_count,
+    (co.max_capacity - COALESCE(COUNT(e.enrollment_id), 0))::INTEGER
+        AS remaining_capacity
+FROM course_offering co
+LEFT JOIN enrollment e
+  ON e.offering_id = co.offering_id
+ AND e.status = 'selected'
+GROUP BY co.offering_id, co.max_capacity;
+\end{lstlisting}
+
+\section{SQL 测试结果摘录}
+
+\code{opengauss_setup/sql/test_triggers_constraints.sql} 使用事务和匿名块捕获预期异常，最后执行 \code{ROLLBACK}，不会污染样例数据。测试覆盖角色错配、先修自指、先修环路、容量超选、时间冲突、重复选课、成绩审计、退课限制和视图查询。一次测试输出摘录如下：
+
+\begin{lstlisting}[style=codestyle]
+PASS role check teacher-as-student failed
+PASS self prerequisite failed
+PASS prerequisite cycle failed
+PASS capacity full failed
+PASS timetable conflict failed
+PASS unique student/offering failed
+PASS score update without user failed
+PASS score audit trigger inserted log row
+PASS completed enrollment drop failed
+Trigger and constraint tests finished with rollback.
+\end{lstlisting}

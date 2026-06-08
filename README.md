@@ -16,7 +16,7 @@
 | 我的选课 | 查看当前学期可选课程，点击选课；查看已选课程，可退课 |
 | 我的成绩单 | 查看全部已修课程的成绩、学分、任课教师；统计平均分与加权绩点 |
 
-选课限制：容量已满禁止选课；先修课程未通过（成绩 < 60）禁止选后续课；已有成绩的课程不允许退课；选课只在学期开放的时间窗口内有效。
+选课限制：容量已满禁止选课；上课时间冲突禁止选课；先修课程未通过（成绩 < 60）禁止选后续课；已有成绩的课程不允许退课；选课只在学期开放的时间窗口内有效。选课写入使用事务和 `SELECT ... FOR UPDATE` 锁定目标开课班次，降低并发抢课导致超选的风险。
 
 ### 教师端
 
@@ -42,7 +42,7 @@
 
 ## 数据库设计
 
-共 13 张表，分为四个层次。
+共 14 张表，分为四个层次。
 
 ### 组织结构（3 张）
 
@@ -62,20 +62,21 @@
 | `teacher` | 教师详细信息：教师号、姓名、性别、所属院系、职称、邮箱 |
 | `admin_profile` | 管理员详细信息 |
 
-### 教学安排（3 张）
+### 教学安排（4 张）
 
 | 表名 | 说明 |
 |------|------|
 | `semester` | 学期：名称、起止日期、选课开放时间、状态 |
 | `course` | 课程定义：课程号、名称、类型（必修/选修/公共）、学分、学时、开课院系 |
-| `course_offering` | 开课班次：某学期某教师开设的具体课次，包含教室、容量上限、上课时间；`selected_count` 由触发器自动维护 |
+| `course_offering` | 开课班次：某学期某教师开设的具体课次，包含教室、容量上限和状态 |
+| `course_schedule` | 上课时间片：将班次上课时间拆分为星期、开始节次和结束节次，支持时间冲突检查 |
 
 ### 选课与成绩（3 张）
 
 | 表名 | 说明 |
 |------|------|
 | `course_prerequisite` | 先修关系：记录课程之间的先后依赖 |
-| `enrollment` | 选课记录：学生与开课班次的多对多关系，存储选课状态和最终成绩、绩点 |
+| `enrollment` | 选课记录：学生与开课班次的多对多关系，存储选课状态和最终成绩；绩点由查询按成绩动态计算 |
 | `score_change_log` | 成绩修改日志：每次成绩变更均记录修改前后的值、操作人和原因 |
 
 ---
@@ -91,7 +92,7 @@
 ├── opengauss_setup/
 │   ├── docker/               # openGauss Docker Compose、初始化脚本、Tunnel 接入说明
 │   ├── config/               # openGauss 连接配置样例
-│   └── sql/init.sql          # openGauss 建表脚本，含触发器和样本数据
+│   └── sql/                  # openGauss 初始化脚本和结构迁移脚本
 │
 ├── db/
 │   ├── __init__.py           # 统一导出数据库工具函数
@@ -168,7 +169,7 @@
 ./opengauss_setup/docker/start_opengauss.sh
 ```
 
-此脚本会启动 `course-opengauss` 容器，创建 `course_system` 数据库，并导入 `opengauss_setup/sql/init.sql` 中的表、触发器和样本数据。
+此脚本会启动 `course-opengauss` 容器，创建 `course_system` 数据库，并导入 `opengauss_setup/sql/init.sql` 中的表、约束、索引和样本数据。
 
 如需只启动容器：
 
@@ -181,6 +182,8 @@ docker compose -f opengauss_setup/docker/docker-compose.yml up -d
 ```bash
 ./opengauss_setup/docker/init_db.sh
 ```
+
+如果已有旧版 openGauss 数据库且不想重建，可先备份数据库，再审阅并执行 `opengauss_setup/sql/migrate_3nf_20260608.sql`，用于迁移到结构化上课时间和查询时计算派生值的 3NF 版本。
 
 如果已有 openGauss 数据库，只想补充持久登录所需的会话表，可执行：
 

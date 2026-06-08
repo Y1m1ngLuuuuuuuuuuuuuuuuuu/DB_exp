@@ -1,4 +1,4 @@
-from db.connection import query, query_one, execute
+from db.connection import query, query_one, DBSession
 
 def calc_gpa(score: float) -> float:
     if score >= 90: return 4.0
@@ -12,11 +12,27 @@ def calc_gpa(score: float) -> float:
     if score >= 60: return 1.0
     return 0.0
 
+def _gpa_point_sql(alias: str = "e") -> str:
+    return f"""
+           CASE
+               WHEN {alias}.final_score IS NULL THEN NULL
+               WHEN {alias}.final_score >= 90 THEN 4.0
+               WHEN {alias}.final_score >= 85 THEN 3.7
+               WHEN {alias}.final_score >= 82 THEN 3.3
+               WHEN {alias}.final_score >= 78 THEN 3.0
+               WHEN {alias}.final_score >= 75 THEN 2.7
+               WHEN {alias}.final_score >= 72 THEN 2.3
+               WHEN {alias}.final_score >= 68 THEN 2.0
+               WHEN {alias}.final_score >= 64 THEN 1.5
+               WHEN {alias}.final_score >= 60 THEN 1.0
+               ELSE 0.0
+           END"""
+
 def get_enrollments_for_offering(offering_id: int) -> list[dict]:
     return query(
-        """
+        f"""
         SELECT e.enrollment_id, e.student_id, e.status,
-               e.final_score, e.gpa_point,
+               e.final_score, {_gpa_point_sql("e")} AS gpa_point,
                s.student_name, s.class_name
         FROM enrollment e
         JOIN student s ON e.student_id = s.student_id
@@ -55,55 +71,71 @@ def update_score(
     role: str = "",
     teacher_id: str | None = None,
 ) -> tuple[bool, str]:
-    row = query_one(
-        """
-        SELECT e.final_score, e.status, e.offering_id
-        FROM enrollment e
-        WHERE enrollment_id=%s
-        """,
-        (enrollment_id,),
-    )
-    if not row:
-        return False, "记录不存在"
-    allowed, msg = can_manage_offering_score(row["offering_id"], role, teacher_id)
-    if not allowed:
-        return False, msg
-    if row["status"] == "dropped":
-        return False, "退课记录不能录入成绩"
-    if new_score is None:
-        return False, "成绩不能为空"
-    if new_score < 0 or new_score > 100:
-        return False, "成绩必须在 0 到 100 之间"
-
-    old_score = row["final_score"]
-    if old_score is not None and float(old_score) == float(new_score):
-        return True, ""
-    new_gpa = calc_gpa(new_score) if new_score is not None else None
-
     try:
-        execute(
-            "UPDATE enrollment SET final_score=%s, gpa_point=%s, status='completed' "
-            "WHERE enrollment_id=%s",
-            (new_score, new_gpa, enrollment_id),
-        )
-        execute(
-            """
-            INSERT INTO score_change_log
-              (enrollment_id, old_score, new_score, changed_by_user_id, reason)
-            VALUES (%s,%s,%s,%s,%s)
-            """,
-            (enrollment_id, old_score, new_score, changed_by_user_id, reason),
-        )
+        with DBSession() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT e.final_score, e.status, e.offering_id, co.teacher_id
+                    FROM enrollment e
+                    JOIN course_offering co ON e.offering_id = co.offering_id
+                    WHERE e.enrollment_id=%s
+                    FOR UPDATE
+                    """,
+                    (enrollment_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return False, "记录不存在"
+
+                if role == "admin":
+                    allowed = True
+                    msg = ""
+                elif role == "teacher" and teacher_id and row["teacher_id"] == teacher_id:
+                    allowed = True
+                    msg = ""
+                else:
+                    allowed = False
+                    msg = "当前账号无权维护该班次成绩"
+                if not allowed:
+                    return False, msg
+                if row["status"] == "dropped":
+                    return False, "退课记录不能录入成绩"
+                if new_score is None:
+                    return False, "成绩不能为空"
+                if new_score < 0 or new_score > 100:
+                    return False, "成绩必须在 0 到 100 之间"
+
+                old_score = row["final_score"]
+                if old_score is not None and float(old_score) == float(new_score):
+                    return True, ""
+
+                cur.execute(
+                    "SELECT set_config('app.current_user_id', %s, true)",
+                    (str(changed_by_user_id),),
+                )
+                cur.execute(
+                    "SELECT set_config('app.score_change_reason', %s, true)",
+                    (reason or "score updated",),
+                )
+                cur.execute(
+                    "UPDATE enrollment SET final_score=%s, status='completed' "
+                    "WHERE enrollment_id=%s",
+                    (new_score, enrollment_id),
+                )
         return True, ""
     except Exception as exc:
-        return False, str(exc)
+        msg = str(exc).splitlines()[0] if str(exc) else "数据库操作失败"
+        if "requires app.current_user_id" in msg:
+            msg = "成绩更新缺少当前操作者，无法写入审计日志"
+        return False, msg
 
 def get_student_transcript(student_id: str) -> list[dict]:
     return query(
-        """
+        f"""
         SELECT c.course_name, c.credit, c.course_type,
                sem.semester_name, t.teacher_name,
-               e.final_score, e.gpa_point
+               e.final_score, {_gpa_point_sql("e")} AS gpa_point
         FROM enrollment e
         JOIN course_offering co ON e.offering_id = co.offering_id
         JOIN course    c   ON co.course_id   = c.course_id
