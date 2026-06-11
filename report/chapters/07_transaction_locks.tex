@@ -8,13 +8,13 @@
 
 \section{选课事务边界设计}
 
-\code{db/connection.py} 中的 \code{DBSession} 是项目的事务封装。它进入上下文时建立连接，正常退出时提交事务，发生异常时回滚事务。本轮改造后，学生选课、退课和成绩更新都使用显式事务路径。
+\code{db/connection.py} 中的 \code{DBSession} 是项目的事务封装。它进入环境时建立连接，正常退出时提交事务，发生异常时回滚事务。学生选课、退课和成绩更新均使用显式事务路径。
 
-学生选课由 \code{services/selection_service.py} 调用数据库函数 \code{select_course_tx(p_student_id, p_offering_id)}。openGauss 存储函数本身不显式开始或提交事务，而是在调用方事务中执行带锁检查和写入。因此事务边界由 \code{DBSession} 管理，数据库函数和触发器在同一事务上下文内工作。
+学生选课由 \code{services/selection_service.py} 调用数据库函数 \code{select_course_tx(p_student_id, p_offering_id)}。openGauss 存储函数本身不显式开始或提交事务，而是在调用方事务中执行带锁检查和写入。因此事务边界由 \code{DBSession} 管理，数据库函数和触发器在同一事务环境内工作。
 
 \section{选课事务流程}
 
-当前选课事务流程见表 \ref{tab:select-transaction-flow}。其核心原则是：容量检查、时间冲突检查、先修课程检查和写入 \code{enrollment} 必须处于同一事务边界内。
+选课事务流程见表 \ref{tab:select-transaction-flow}。其核心原则是：容量检查、时间冲突检查、先修课程检查和写入 \code{enrollment} 必须处于同一事务边界内。
 
 {\footnotesize
 \setlength{\tabcolsep}{3pt}
@@ -37,9 +37,10 @@
 4 & 插入或更新选课记录 & \code{enrollment} & 形成新的选课关系 & 触发器随语句执行 \\
 5 & 检查学生、班次和学期状态 & \code{student}、\code{course_offering}、\code{semester} & 阻止非在读学生或关闭班次选课 & 触发器兜底 \\
 6 & 统计当前已选人数 & \code{enrollment} & 防止超过 \code{max_capacity} & 行锁后聚合统计 \\
-7 & 检查时间冲突 & \code{course_schedule}、\code{enrollment} & 同一学生同学期课程时间不重叠 & 同一事务内查询 \\
-8 & 检查先修课程 & \code{course_prerequisite}、\code{enrollment} & 未通过先修课不能选后续课 & 同一事务内查询 \\
-9 & 由唯一约束兜底 & \code{enrollment} & 防止重复记录落库 & \code{UNIQUE(student_id, offering_id)} \\
+7 & 检查同课跨班 & \code{course_offering}、\code{enrollment} & 同一学期同一课程只能选择一个教学班 & 同一事务内查询 \\
+8 & 检查时间冲突 & \code{course_schedule}、\code{enrollment} & 同一学生同学期课程时间不重叠 & 同一事务内查询 \\
+9 & 检查先修课程 & \code{course_prerequisite}、\code{enrollment} & 未通过先修课不能选后续课 & 同一事务内查询 \\
+10 & 由唯一约束兜底 & \code{enrollment} & 防止重复记录落库 & \code{UNIQUE(student_id, offering_id)} \\
 \end{longtable}
 }
 
@@ -71,7 +72,7 @@ WHERE offering_id = :offering_id
   AND status = 'selected';
 \end{lstlisting}
 
-由于同一教学班的容量检查被串行化，两个事务不会同时基于同一个旧容量状态插入记录，因此可以防止“最后一个名额被多人同时抢到”的超选问题。系统没有恢复 \code{selected_count} 字段，而是通过锁加聚合统计实现一致性。
+由于同一教学班的容量检查被串行化，两个事务不会同时基于同一个未同步的容量视图插入记录，因此可以防止“最后一个名额被多人同时抢到”的超选问题。系统不在基础表中维护 \code{selected_count} 字段，而是通过锁加聚合统计实现一致性。
 
 \section{唯一约束与重复选课防护}
 
@@ -79,13 +80,15 @@ WHERE offering_id = :offering_id
 
 即使应用层或函数逻辑遗漏，\code{UNIQUE(student_id, offering_id)} 仍会在数据库层拒绝重复记录。这是用唯一约束维护业务候选键的典型做法。
 
+进一步地，\code{trg_enrollment_guard} 已经补充同课跨班限制：同一学生在同一学期如果已经选择某门课程的一个教学班，则不能再选择同一 \code{semester_id}、同一 \code{course_id} 下的另一个教学班。该规则无法仅靠 \code{UNIQUE(student_id, offering_id)} 表达，因为它需要跨 \code{enrollment} 和 \code{course_offering} 查询课程与学期，因此适合由触发器实现。
+
 \section{时间冲突与先修课程检查的事务一致性}
 
 时间冲突和先修课程检查也放在 \code{trg_enrollment_guard} 中执行。由于触发器与触发它的 INSERT 或 UPDATE 语句处在同一事务内，如果检查失败，选课写入会一起回滚。时间冲突使用 \code{course_schedule} 的结构化时间片判断区间重叠；先修课程使用 \code{course_prerequisite} 和历史 \code{completed} 选课记录判断是否达到 60 分。
 
 \section{成绩更新事务与审计一致性}
 
-成绩更新也已经改为事务化。服务层在同一 \code{DBSession} 中锁定目标 \code{enrollment} 行，检查教师或管理员权限，然后设置审计上下文：
+成绩更新同样采用事务化路径。服务层在同一 \code{DBSession} 中锁定目标 \code{enrollment} 行，检查教师或管理员权限，然后设置审计变量：
 
 \begin{lstlisting}[style=sqlstyle]
 SELECT set_config('app.current_user_id', :user_id, true);
@@ -103,11 +106,17 @@ WHERE enrollment_id = :enrollment_id;
 
 在本系统中，触发器负责数据库层兜底，服务层负责事务入口、用户权限和友好错误提示。二者配合后，选课容量、时间冲突、先修课程、退课限制和成绩日志不再只是前端或服务层约定，而成为数据库可以强制执行的规则。
 
-当前系统没有显式调整全局事务隔离级别，而是针对高风险资源使用行级锁。对选课容量而言，锁定 \code{course_offering} 行已经能把同一教学班的容量检查串行化；对重复选课而言，业务唯一约束可以在较低隔离级别下兜底；对成绩更新而言，服务层锁定目标 \code{enrollment} 行后再更新成绩，避免同一成绩记录并发覆盖。
+系统没有显式调整全局事务隔离级别，而是针对高风险资源使用行级锁。对选课容量而言，锁定 \code{course_offering} 行能够把同一教学班的容量检查串行化；对重复选课而言，业务唯一约束可以在较低隔离级别下兜底；对成绩更新而言，服务层锁定目标 \code{enrollment} 行后再更新成绩，避免同一成绩记录并发覆盖。
 
-\section{当前实现的不足与改进}
+\section{多连接并发测试}
 
-表 \ref{tab:concurrency-risk-solution} 汇总了当前系统面向典型并发场景的处理方式。
+除回滚型 SQL 测试脚本外，\code{scripts/concurrency_enrollment_test.py} 用于模拟两个独立数据库连接同时抢一个容量为 1 的教学班。脚本创建测试学期、测试课程、两个测试学生和一个容量为 1 的教学班，然后使用两个线程分别调用 \code{select_course_tx()}。并发验证记录结果为 \code{success_count = 1}、\code{failed_count = 1}、\code{selected_count_in_db = 1}。
+
+该脚本的价值在于验证 \code{SELECT ... FOR UPDATE} 不只是理论设计，而能在真实多连接环境中串行化同一教学班的容量检查。测试结果表明，在两个事务几乎同时提交选课请求时，只有一个事务成功插入 \code{selected} 记录，另一个事务在锁释放后重新统计容量并因名额已满失败。
+
+\section{并发控制的不足与改进}
+
+表 \ref{tab:concurrency-risk-solution} 汇总了系统面向典型并发场景的处理方式。
 
 {\footnotesize
 \setlength{\tabcolsep}{3pt}
@@ -132,8 +141,8 @@ WHERE enrollment_id = :enrollment_id;
 \end{longtable}
 }
 
-当前已处理最核心的抢课容量风险，但仍有改进空间：同一学生同一学期选择同一课程不同教学班的限制尚未固化，需要跨表触发器或额外业务键设计；此外，还应继续编写多连接并发压测，模拟多个学生同时抢同一教学班最后名额，验证锁等待和异常回滚行为。
+系统已处理最核心的抢课容量风险、重复选课风险和同课跨班风险，但仍有改进空间：可以继续扩大多连接并发压测规模，例如模拟几十个学生同时抢多个热门教学班，观察锁等待时间、失败原因分布和事务回滚行为；也可以进一步评估不同事务隔离级别对查询性能和一致性的影响。
 
-\section{本章小结}
+\section{事务与锁机制小结}
 
-本章从事务和锁角度说明了当前系统如何处理选课一致性。系统没有依赖页面端“先查容量再插入”的脆弱流程，而是在 \code{DBSession} 事务中调用 \code{select_course_tx()}，由行级锁、触发器和唯一约束共同保证选课写入的一致性。成绩更新同样通过事务上下文和触发器保证成绩与审计日志原子一致。
+系统没有依赖页面端“先查容量再插入”的脆弱流程，而是在 \code{DBSession} 事务中调用 \code{select_course_tx()}，由行级锁、触发器和唯一约束共同保证选课写入的一致性。成绩更新同样通过事务环境和触发器保证成绩与审计日志原子一致。

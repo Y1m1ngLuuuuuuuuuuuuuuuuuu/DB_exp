@@ -3,20 +3,21 @@ import pandas as pd
 from datetime import date
 from pages._guards import require_role
 from services.course_service import list_semesters, create_semester, update_semester
+from ui.components import render_app_header, render_empty_state
 
 _STATUS_LABEL = {"planned": "未开放", "open": "选课中", "closed": "已结束"}
 _STATUS_OPTIONS = ["planned", "open", "closed"]
 
 def render() -> None:
     require_role("admin")
-    st.header("学期管理")
+    render_app_header("学期管理", "维护学期日期、选课窗口和学期状态。")
 
     tab_list, tab_add = st.tabs(["学期列表", "新增学期"])
 
     with tab_list:
         semesters = list_semesters()
         if not semesters:
-            st.info("暂无学期数据")
+            render_empty_state("暂无学期数据", "创建学期后可以维护选课窗口和状态。")
         else:
             df = pd.DataFrame([
                 {

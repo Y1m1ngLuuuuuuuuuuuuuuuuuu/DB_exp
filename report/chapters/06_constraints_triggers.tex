@@ -2,9 +2,9 @@
 
 \section{完整性约束设计目标}
 
-本章依据 \code{opengauss_setup/sql/init.sql}、\code{migrate_triggers_constraints_20260608.sql} 和 \code{test_triggers_constraints.sql}，说明当前系统已经落地的数据库完整性机制。完整性设计目标包括：实体可唯一标识、外键引用合法、业务取值范围合法、角色档案与账户角色一致、先修课程关系无自指和环路、选课过程不超容量且不发生时间冲突、成绩修改可以审计追踪。
+完整性机制以 \code{opengauss_setup/sql/init.sql}、\code{migrate_triggers_constraints_20260608.sql} 和 \code{test_triggers_constraints.sql} 为实现证据。完整性设计目标包括：实体可唯一标识、外键引用合法、业务取值范围合法、角色档案与账户角色一致、先修课程关系无自指和环路、选课过程不超容量且不发生时间冲突、同一学生同一学期同一课程只能选择一个教学班、成绩修改可以审计追踪。
 
-与旧版本通过触发器维护 \code{selected_count} 的思路不同，当前系统在 3NF 迁移后删除了 \code{selected_count} 派生字段。本系统不再通过触发器同步该字段，而是通过 \code{enrollment} 表和视图统计当前已选人数。触发器的职责转向跨表业务完整性检查和审计记录维护，例如选课容量检查、时间冲突检查、先修课程合法性检查以及成绩变更日志写入。
+在数据库原理1系统基础上的优化中，本系统没有把 \code{selected_count} 作为基础表字段，也不通过触发器同步派生计数，而是通过 \code{enrollment} 表和视图统计当前已选人数。触发器的职责集中在跨表业务完整性检查和审计记录维护，例如选课容量检查、时间冲突检查、先修课程合法性检查以及成绩变更日志写入。
 
 \section{实体完整性：主键约束}
 
@@ -16,7 +16,7 @@
 
 \section{用户自定义完整性：UNIQUE、CHECK、NOT NULL、DEFAULT}
 
-本轮新增的 \code{migrate_triggers_constraints_20260608.sql} 在原有主键、外键、NOT NULL、DEFAULT 和 CHECK 约束基础上，进一步补充了业务唯一约束和合法性检查。表 \ref{tab:constraints-new} 总结了主要约束。
+\code{migrate_triggers_constraints_20260608.sql} 在原有主键、外键、NOT NULL、DEFAULT 和 CHECK 约束基础上，进一步声明业务唯一约束和合法性检查。表 \ref{tab:constraints-new} 总结了主要约束。
 
 \begin{longtable}{p{0.23\textwidth}p{0.35\textwidth}p{0.33\textwidth}}
 \caption{主要完整性约束}\label{tab:constraints-new}\\
@@ -40,11 +40,11 @@
 \code{enrollment} & \code{UNIQUE(student_id, offering_id)} & 防止同一学生重复选择同一教学班。 \\
 \end{longtable}
 
-教学班容量与教室容量的关系属于跨表约束，普通 CHECK 无法查询另一张表，因此本系统使用触发器实现。迁移脚本执行前先审计并修正了已有样例数据中 \code{MA101} 班次容量大于 \code{M201} 教室容量的问题。
+教学班容量与教室容量的关系属于跨表约束，普通 CHECK 无法查询另一张表，因此本系统使用触发器实现。优化脚本执行前先审计并修正了已有样例数据中 \code{MA101} 班次容量大于 \code{M201} 教室容量的问题。
 
 \section{跨表业务完整性与触发器设计}
 
-本轮已经实现数据库触发器，触发器定义集中在 \code{opengauss_setup/sql/migrate_triggers_constraints_20260608.sql}。这些触发器不是用于维护 \code{selected_count}，而是用于角色档案一致性、先修关系合法性、选课完整性、教室容量一致性和成绩审计。表 \ref{tab:trigger-list} 给出触发器清单。
+数据库触发器定义集中在 \code{opengauss_setup/sql/migrate_triggers_constraints_20260608.sql}。这些触发器不是用于维护 \code{selected_count}，而是用于角色档案一致性、先修关系合法性、选课完整性、教室容量一致性和成绩审计。表 \ref{tab:trigger-list} 给出触发器清单。
 
 {\scriptsize
 \setlength{\tabcolsep}{2pt}
@@ -67,14 +67,47 @@
 \code{trg_prerequisite_no_cycle} & \code{course_prerequisite} & 插入或更新前 & 禁止自指先修课，并用递归查询检测环路 & 递归查询与复杂完整性 & 已实现 \\
 \code{trg_offering_capacity_check} & \code{course_offering} & 插入或改容量、教室前 & 教学班容量不能超过教室容量，且不能低于当前已选人数 & 跨表约束 & 已实现 \\
 \code{trg_classroom_capacity_update_check} & \code{classroom} & 更新 \code{capacity} 前 & 降低教室容量时不能小于已有教学班容量 & 更新约束 & 已实现 \\
-\code{trg_enrollment_guard} & \code{enrollment} & 插入或改学生、班次、状态前 & 检查学生状态、班次状态、选课窗口、容量、时间冲突、先修课和退课限制 & 主动规则、事务与锁 & 已实现 \\
+\code{trg_enrollment_guard} & \code{enrollment} & 插入或改学生、班次、状态前 & 检查学生状态、班次状态、选课窗口、容量、同课跨班、时间冲突、先修课和退课限制 & 主动规则、事务与锁 & 已实现 \\
 \code{trg_score_change_log} & \code{enrollment} & 更新 \code{final_score} 后 & 自动写入 \code{score_change_log}，记录旧成绩、新成绩、操作者和原因 & 审计触发器 & 已实现 \\
+\end{longtable}
+}
+
+表 \ref{tab:rule-implementation-evidence} 进一步把业务规则、数据库实现对象和验证方式对应起来，用于说明“已实现”表述的证据来源。
+
+{\scriptsize
+\setlength{\tabcolsep}{2pt}
+\renewcommand{\arraystretch}{1.16}
+\begin{longtable}{p{0.19\textwidth}p{0.24\textwidth}p{0.25\textwidth}p{0.20\textwidth}p{0.07\textwidth}}
+\caption{数据库规则、实现对象与验证方式}\label{tab:rule-implementation-evidence}\\
+\toprule
+业务规则 & 数据库实现对象 & 所在文件 & 验证方式 & 状态 \\
+\midrule
+\endfirsthead
+\toprule
+业务规则 & 数据库实现对象 & 所在文件 & 验证方式 & 状态 \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+角色档案一致性 & \code{trg_student_role_check}、\code{trg_teacher_role_check}、\code{trg_admin_role_check} & \code{migrate_triggers_constraints_20260608.sql} & 角色错配插入失败测试 & 已实现 \\
+先修课程自指与环路 & \code{chk_prereq_not_self}、\code{trg_prerequisite_no_cycle} & \code{migrate_triggers_constraints_20260608.sql} & 自指和环路插入失败测试 & 已实现 \\
+教学班容量不超过教室容量 & \code{trg_offering_capacity_check}、\code{trg_classroom_capacity_update_check} & \code{migrate_triggers_constraints_20260608.sql} & 样例数据修正和触发器检查 & 已实现 \\
+选课容量检查 & \code{trg_enrollment_guard} & \code{migrate_triggers_constraints_20260608.sql} & 容量为 1 的第二次选课失败测试 & 已实现 \\
+时间冲突检查 & \code{trg_enrollment_guard}、\code{course_schedule} & \code{migrate_triggers_constraints_20260608.sql} & 同学期重叠时间片选课失败测试 & 已实现 \\
+同课跨班限制 & \code{trg_enrollment_guard}、\code{course_offering} & \code{migrate_triggers_constraints_20260608.sql} & 同学生同学期同课程第二个教学班选课失败测试 & 已实现 \\
+先修课程通过检查 & \code{trg_enrollment_guard}、\code{course_prerequisite} & \code{migrate_triggers_constraints_20260608.sql} & SQL 中要求先修课 \code{completed} 且成绩不低于 60 & 已实现 \\
+已完成或已有成绩不能退课 & \code{trg_enrollment_guard} & \code{migrate_triggers_constraints_20260608.sql} & 已完成选课改为退课失败测试 & 已实现 \\
+成绩修改自动审计 & \code{trg_score_change_log}、\code{score_change_log} & \code{migrate_triggers_constraints_20260608.sql}、\code{score_service.py} & 设置操作者后更新成绩并验证日志行 & 已实现 \\
+重复选课防护 & \code{UNIQUE(student_id, offering_id)}、\code{select_course_tx()} & \code{init.sql}、\code{migrate_triggers_constraints_20260608.sql} & 重复插入触发唯一约束失败 & 已实现 \\
+已选人数统计视图 & \code{v_offering_selected_count} & \code{migrate_triggers_constraints_20260608.sql} & 视图 smoke test 查询成功 & 已实现 \\
 \end{longtable}
 }
 
 \section{选课完整性触发器}
 
-\code{trg_enrollment_guard} 是选课系统最核心的数据库层完整性保护。对 \code{status='selected'} 的插入或恢复选课，它会锁定目标 \code{course_offering} 行，然后检查当前已选人数是否小于 \code{max_capacity}。已选人数通过 \code{enrollment} 聚合统计得到，系统没有恢复 \code{course_offering.selected_count}。
+\code{trg_enrollment_guard} 是选课系统最核心的数据库层完整性保护。对 \code{status='selected'} 的插入或恢复选课，它会锁定目标 \code{course_offering} 行，然后检查当前已选人数是否小于 \code{max_capacity}。已选人数通过 \code{enrollment} 聚合统计得到，基础表不设置 \code{course_offering.selected_count}。
+
+同课跨班限制也在该触发器中完成。触发器先通过 \code{NEW.offering_id} 得到当前教学班的 \code{course_id} 和 \code{semester_id}，再查询该学生是否已经存在同学期、同课程、其他教学班的 \code{selected} 状态选课记录。若存在，则抛出异常并阻止写入。这样，\code{UNIQUE(student_id, offering_id)} 负责防止重复选择同一个教学班，触发器负责防止同一学期同一课程跨班重复选择。
 
 该触发器还基于 \code{course_schedule} 检查同一学期内的时间冲突，区间重叠条件为：
 
@@ -110,10 +143,10 @@ WHERE enrollment_id = 1;
 
 \section{应用层校验与数据库触发器的关系}
 
-当前应用层仍保留友好的错误提示和页面交互检查，例如 \code{services/selection_service.py} 会调用数据库函数 \code{select_course_tx()}，\code{services/score_service.py} 会在事务内设置审计上下文。数据库触发器承担兜底一致性责任：即使绕过前端或服务层，只要直接写数据库，也必须通过容量、时间冲突、先修课程、角色档案和成绩审计规则。
+当前应用层仍保留友好的错误提示和页面交互检查，例如 \code{services/selection_service.py} 会调用数据库函数 \code{select_course_tx()}，\code{services/score_service.py} 会在事务内设置审计变量。数据库触发器承担兜底一致性责任：即使绕过前端或服务层，只要直接写数据库，也必须通过容量、时间冲突、先修课程、角色档案和成绩审计规则。
 
-这种分层体现了数据库完整性设计思想：局部、稳定的规则用 CHECK、UNIQUE 和外键表达；跨表和上下文相关规则用触发器表达；用户体验相关的提示和权限入口仍由应用层负责。
+这种分层体现了数据库完整性设计思想：局部、稳定的规则用 CHECK、UNIQUE 和外键表达；跨表和环境相关规则用触发器表达；用户体验相关的提示和权限入口仍由应用层负责。
 
-\section{本章小结}
+\section{完整性机制小结}
 
-本章说明了当前系统已经从“约束设计方案”推进到“数据库层实现”。主键、外键、唯一约束、CHECK、DEFAULT 保证基础完整性；角色、容量、先修、选课和成绩日志等跨表规则由触发器维护；应用层负责权限入口、事务调用和友好错误提示。尤其需要强调的是，触发器没有恢复 \code{selected_count}，而是在保留 3NF 结构的前提下承担复杂完整性检查和审计职责。
+系统的完整性机制已经覆盖基础完整性和跨表业务完整性。主键、外键、唯一约束、CHECK、DEFAULT 保证基础完整性；角色、容量、先修、选课和成绩日志等跨表规则由触发器维护；应用层负责权限入口、事务调用和友好错误提示。尤其需要强调的是，触发器不维护 \code{selected_count} 这类派生计数字段，而是在保留 3NF 结构的前提下承担复杂完整性检查和审计职责。

@@ -15,23 +15,6 @@ _WEEKDAY_TO_INT = {
 _SCHEDULE_PATTERN = re.compile(r"^(周[一二三四五六日天])\s*(\d+)\s*-\s*(\d+)\s*节?$")
 
 
-def _gpa_point_sql(alias: str = "e") -> str:
-    return f"""
-           CASE
-               WHEN {alias}.final_score IS NULL THEN NULL
-               WHEN {alias}.final_score >= 90 THEN 4.0
-               WHEN {alias}.final_score >= 85 THEN 3.7
-               WHEN {alias}.final_score >= 82 THEN 3.3
-               WHEN {alias}.final_score >= 78 THEN 3.0
-               WHEN {alias}.final_score >= 75 THEN 2.7
-               WHEN {alias}.final_score >= 72 THEN 2.3
-               WHEN {alias}.final_score >= 68 THEN 2.0
-               WHEN {alias}.final_score >= 64 THEN 1.5
-               WHEN {alias}.final_score >= 60 THEN 1.0
-               ELSE 0.0
-           END"""
-
-
 def parse_schedule_text(schedule_text: str | None) -> list[tuple[int, int, int]]:
     if not schedule_text or not schedule_text.strip():
         return []
@@ -219,9 +202,17 @@ def list_offerings_for_student(student_id: str, semester_id: str) -> list[dict]:
               SELECT offering_id FROM enrollment
               WHERE student_id = %s AND status = 'selected'
           )
+          AND course_id NOT IN (
+              SELECT co2.course_id
+              FROM enrollment e2
+              JOIN course_offering co2 ON e2.offering_id = co2.offering_id
+              WHERE e2.student_id = %s
+                AND e2.status = 'selected'
+                AND co2.semester_id = %s
+          )
         ORDER BY course_id
         """,
-        (semester_id, student_id),
+        (semester_id, student_id, student_id, semester_id),
     )
 
 def list_classrooms() -> list[dict]:
@@ -296,15 +287,17 @@ def delete_offering(offering_id: int) -> tuple[bool, str]:
 
 def list_enrolled_offerings(student_id: str, semester_id: str) -> list[dict]:
     return query(
-        f"""
+        """
         SELECT e.enrollment_id, e.status AS enroll_status,
-               e.final_score, {_gpa_point_sql("e")} AS gpa_point,
+               e.final_score, vgd.gpa_point,
                vod.offering_id, vod.schedule_text,
                vod.course_id, vod.course_name, vod.credit, vod.course_type,
                vod.teacher_name,
                vod.building, vod.room_no
         FROM enrollment e
         JOIN v_course_offering_detail vod ON e.offering_id = vod.offering_id
+        LEFT JOIN v_enrollment_grade_detail vgd
+          ON e.enrollment_id = vgd.enrollment_id
         WHERE vod.semester_id = %s AND e.student_id = %s
         ORDER BY e.enrollment_id
         """,

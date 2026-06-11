@@ -117,9 +117,9 @@
 \chapter*{摘要}
 \addcontentsline{toc}{chapter}{摘要}
 
-本文以一个面向高校教务场景的\systemname 为研究对象，按照数据库系统设计流程，完成从规划、需求分析、概念结构设计、逻辑结构设计、规范化设计、完整性约束、事务并发控制、物理设计到运行维护的数据库设计报告。项目当前使用 Docker 运行 openGauss，应用层采用 Python、Streamlit 和 psycopg2，通过原生 SQL 访问数据库。
+本文以一个面向高校教务场景的\systemname 为研究对象，按照数据库系统生命周期和数据库设计流程，完成从规划、需求分析、概念结构设计、逻辑结构设计、规范化设计、完整性约束、事务并发控制、物理设计到运行维护的数据库设计报告。项目当前使用 Docker 运行 openGauss，应用层采用 Python、Streamlit 和 psycopg2，通过原生 SQL 访问数据库。
 
-报告重点不是介绍页面功能，而是围绕数据库原理课程内容分析系统的数据模型。系统将课程定义与开课班次分离，使用 \code{enrollment} 将学生与教学班之间的多对多联系转换为关系模式；通过 \code{course_schedule} 将上课时间片结构化，删除旧设计中可能破坏 1NF 或 3NF 的 \code{schedule_text}、\code{selected_count} 和 \code{gpa_point} 等派生字段；通过主键、外键、唯一约束、CHECK 约束、视图和触发器维护实体完整性、参照完整性和用户自定义完整性。当前数据库层已经实现角色档案一致性、先修课程合法性、选课完整性、教室容量一致性和成绩变更审计触发器；在选课流程中使用 \code{select_course_tx()}、\code{DBSession} 和 \code{SELECT ... FOR UPDATE} 锁定目标开课班次，以降低并发抢课导致超选的风险；并通过 \code{test_triggers_constraints.sql} 对关键规则进行回滚型验证。
+报告重点不是介绍页面功能，而是围绕数据库原理课程内容分析系统的数据模型。系统在数据库原理1已有选课系统功能基础上，进一步从数据库原理2的角度优化数据结构和完整性机制：使用 ER 图和关系模型完成概念设计、逻辑设计，将课程定义与教学班分离，使用 \code{enrollment} 将学生与教学班之间的多对多联系转换为关系模式；通过 \code{course_schedule} 将上课时间片结构化，将已选人数和绩点等可计算信息放在视图或规则表查询中获得，避免在基础表中保存复合文本或派生数据；通过主键、外键、唯一约束、CHECK 约束、视图和触发器维护实体完整性、参照完整性和用户自定义完整性。当前数据库层已经实现角色档案一致性、先修课程合法性、选课完整性、教室容量一致性和成绩变更审计触发器；在选课流程中使用 \code{select_course_tx()}、\code{DBSession} 和 \code{SELECT ... FOR UPDATE} 锁定目标教学班，以降低并发抢课导致超选的风险；并通过 \code{test_triggers_constraints.sql} 和 \code{test_grade_policy.sql} 对关键规则进行回滚型验证。系统通过视图统计已选人数，通过 \code{grade_policy} 和 \code{grade_scale} 支持绩点规则版本化，没有在基础表中保存 \code{selected_count} 或 \code{gpa_point} 派生字段。
 
 通过该项目可以较完整地体现数据库设计流程、ER 建模、关系模型转换、范式分析、完整性约束、事务 ACID、锁机制、索引设计和运行维护等数据库原理2课程知识点。
 
@@ -139,6 +139,8 @@
 \input{chapters/08_physical_design}
 \input{chapters/09_operation_maintenance}
 \input{chapters/10_conclusion}
+\clearpage
+\appendix
 \input{chapters/appendix_sql_tests}
 
 \chapter*{参考资料}

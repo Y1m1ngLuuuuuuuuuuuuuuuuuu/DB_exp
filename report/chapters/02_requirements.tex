@@ -42,6 +42,8 @@
 
 系统需要保存的数据分为五类。第一类是组织结构数据，包括 \code{department}、\code{major}、\code{classroom}。第二类是用户身份数据，包括 \code{user_account}、\code{user_session}、\code{student}、\code{teacher}、\code{admin_profile}。第三类是教学安排数据，包括 \code{semester}、\code{course}、\code{course_offering}、\code{course_schedule} 和 \code{course_prerequisite}。第四类是选课成绩数据，即 \code{enrollment}。第五类是审计数据，即 \code{score_change_log}。
 
+为保证页面演示和查询验证具有足够的数据量，演示数据覆盖 4 个学院、11 个专业、100 名学生、30 名教师、3 名管理员、50 门课程、4 个学期、20 间教室、175 个教学班、1480 条选课记录和 80 条成绩审计日志。学生、教师和管理员账号分别使用学号、教师编号和管理员编号作为登录名，数据库中仅保存密码哈希，明文初始密码只保存在本地凭据文件中。
+
 \section{业务规则}
 
 当前已经实现的业务规则包括：
@@ -60,7 +62,7 @@
   \item 教学班与教室容量一致性：\code{trg_offering_capacity_check} 和 \code{trg_classroom_capacity_update_check} 维护 \code{max_capacity} 与教室容量之间的跨表约束。
 \end{enumerate}
 
-仍需进一步完善的规则包括：同一学生同一学期选择同一课程不同教学班的限制、数据库级角色授权、备份恢复流程以及多连接并发压测。
+同一学生同一学期选择同一课程不同教学班的限制由 \code{trg_enrollment_guard} 在数据库层检查。仍需进一步完善的规则主要包括：数据库级角色授权在真实生产账号中的落地、备份恢复流程、运行监控以及更大规模的多连接并发压测。
 
 \section{数据字典草案}
 

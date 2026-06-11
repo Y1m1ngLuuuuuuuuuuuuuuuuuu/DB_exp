@@ -1,5 +1,7 @@
 *.png
 !report/figures/*.png
+!report/figures/ui/
+!report/figures/ui/*.png
 .DS_Store
 .claude
 .venv/
@@ -12,3 +14,8 @@ report/*.aux
 report/*.log
 report/*.out
 report/*.toc
+logs/
+secrets/
+*ACCOUNT_CREDENTIALS*.md
+!docs/DEMO_ACCOUNT_CREDENTIALS.example.md
+opengauss_setup/sql/local/

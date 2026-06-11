@@ -11,6 +11,7 @@ def _friendly_db_error(exc: Exception) -> str:
         ("outside course selection window", "当前不在选课开放时间内"),
         ("outside drop window", "当前不在选退课开放时间内"),
         ("Course offering", "该课程班次不可选或已满"),
+        ("another offering for course", "同一学期同一门课程只能选择一个教学班"),
         ("is full", "名额已满"),
         ("timetable conflict", "与已选课程时间冲突"),
         ("has not passed all prerequisites", "未满足先修课程要求"),

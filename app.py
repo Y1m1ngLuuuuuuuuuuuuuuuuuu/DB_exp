@@ -7,6 +7,8 @@ from services.auth_service import (
 )
 from utils.auth_cookie import clear_auth_cookie, get_auth_cookie
 from utils.session_state import apply_login_state
+from ui.navigation import render_sidebar_navigation
+from ui.theme import inject_global_css
 
 st.set_page_config(
     page_title=APP_TITLE,
@@ -14,6 +16,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+inject_global_css()
 
 _SESSION_DEFAULTS: dict = {
     "logged_in":  False,
@@ -63,10 +66,12 @@ role = st.session_state.role
 
 _NAV: dict[str, dict[str, str]] = {
     "student": {
-        "我的选课":   "pages.student_select",
-        "我的成绩单": "pages.student_report",
+        "学生首页":   "pages.student_dashboard",
+        "课程选课":   "pages.student_select",
+        "成绩与绩点": "pages.student_report",
     },
     "teacher": {
+        "教师首页":   "pages.teacher_dashboard",
         "成绩管理":   "pages.score_manage",
     },
     "admin": {
@@ -75,6 +80,7 @@ _NAV: dict[str, dict[str, str]] = {
         "开课安排":   "pages.offering_manage",
         "课程维护":   "pages.course_manage",
         "成绩管理":   "pages.score_manage",
+        "审计日志":   "pages.audit_log",
         "学生维护":   "pages.student_manage",
         "教师维护":   "pages.teacher_manage",
     },
@@ -83,15 +89,7 @@ _NAV: dict[str, dict[str, str]] = {
 pages = _NAV.get(role, {})
 
 with st.sidebar:
-    st.title(APP_TITLE)
-    st.caption(f"登录身份：**{st.session_state.username}**（{role}）")
-    st.divider()
-
-    if pages:
-        choice = st.radio("导航", list(pages.keys()), label_visibility="collapsed")
-    else:
-        st.warning("该角色暂无可用页面")
-        choice = None
+    choice = render_sidebar_navigation(role, pages, st.session_state.username)
 
     st.divider()
     if st.button("退出登录", use_container_width=True):

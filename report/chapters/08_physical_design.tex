@@ -22,19 +22,21 @@
   \item \code{idx_enrollment_student_status} 与 \code{idx_enrollment_offering_status}：支持学生成绩单、已选课程、班次人数统计和容量检查。
   \item \code{idx_score_log_enrollment} 与 \code{idx_score_log_changed_at}：支持按选课记录追踪成绩变更，以及按时间倒序查看审计日志。
   \item \code{idx_course_prereq_prereq}：支持从某门先修课反查后续课程，并辅助先修关系递归检查。
+  \item \code{idx_offering_semester_course}：支持同课跨班限制中按学期和课程定位教学班。
+  \item \code{idx_semester_grade_policy} 与 \code{idx_grade_scale_policy_range}：支持按学期定位绩点规则版本，以及按规则版本和成绩区间计算绩点。
 \end{itemize}
 
 \section{规范化后的索引补偿}
 
 规范化设计提高了数据一致性，但也会增加表连接数量。例如，课程列表需要从 \code{course_offering} 连接 \code{course}、\code{teacher}、\code{semester}、\code{classroom}，上课时间需要从 \code{course_schedule} 聚合得到，已选人数需要从 \code{enrollment} 统计得到。因此，物理设计需要通过索引补偿规范化带来的查询成本。
 
-\code{idx_offering_course_semester} 支持按课程和学期查询教学班，适合管理员维护某门课程的开课情况；\code{idx_offering_teacher_semester} 支持教师查看指定学期教学任务；\code{idx_schedule_offering} 支持从教学班快速读取上课时间片；\code{idx_schedule_time} 支持按星期和节次进行时间冲突检测；\code{idx_enrollment_student_status} 支持学生查看自己已选、已完成或已退课程；\code{idx_enrollment_offering_status} 支持统计某教学班当前选课人数，也是容量检查的关键索引。
+\code{idx_offering_course_semester} 支持按课程和学期查询教学班，适合管理员维护某门课程的开课情况；\code{idx_offering_semester_course} 支持同课跨班限制中按学期和课程反查教学班；\code{idx_offering_teacher_semester} 支持教师查看指定学期教学任务；\code{idx_schedule_offering} 支持从教学班快速读取上课时间片；\code{idx_schedule_time} 支持按星期和节次进行时间冲突检测；\code{idx_enrollment_student_status} 支持学生查看自己已选、已完成或已退课程；\code{idx_enrollment_offering_status} 支持统计某教学班当前选课人数，也是容量检查的关键索引。
 
-这组索引与第 5 章的规范化改造形成配合：系统不再在基础表中保存 \code{schedule_text}、\code{selected_count} 和 \code{gpa_point}，而是在查询时通过聚合、连接或 CASE 表达式得到展示值。索引设计的作用就是让这种“减少冗余、查询计算”的模式在数据量增长后仍具有可接受的性能。
+这组索引与第 5 章的规范化优化形成配合：系统将上课时间、已选人数和绩点等展示需求分别交给结构化时间片、聚合视图或绩点规则视图处理，避免把复合文本和派生结果直接固化在基础表中。索引设计的作用就是让这种“减少冗余、查询计算”的模式在数据量增长后仍具有可接受的性能。
 
 \section{视图设计与派生数据查询}
 
-本轮在 \code{migrate_triggers_constraints_20260608.sql} 中新增了三个查询视图，用于在不破坏 3NF 的前提下提高查询便利性。这些视图不是基础表，不承担数据持久化职责，因此不会把 \code{selected_count} 或展示用 \code{schedule_text} 重新引入基础关系模式。
+当前查询视图主要由 \code{migrate_triggers_constraints_20260608.sql} 和 \code{migrate_grade_policy_20260611.sql} 创建，用于在不破坏 3NF 的前提下提高查询便利性。这些视图不是基础表，不承担数据持久化职责，因此不会把 \code{selected_count}、展示用 \code{schedule_text} 或 \code{gpa_point} 重新引入基础关系模式。
 
 \begin{longtable}{p{0.25\textwidth}p{0.35\textwidth}p{0.31\textwidth}}
 \caption{规范化后的查询视图}\\
@@ -48,20 +50,50 @@
 \endhead
 \bottomrule
 \endfoot
-\code{v_offering_selected_count} & \code{offering_id}、\code{max_capacity}、\code{selected_count}、\code{remaining_capacity} & 通过聚合 \code{enrollment} 统计已选人数和剩余容量，替代基础表中的派生字段。 \\
+\code{v_offering_selected_count} & \code{offering_id}、\code{max_capacity}、\code{selected_count}、\code{remaining_capacity} & 通过聚合 \code{enrollment} 统计已选人数和剩余容量，避免在基础表中保存派生计数。 \\
 \code{v_course_offering_detail} & 课程、教师、学期、教室、容量、已选人数、剩余容量、展示用 \code{schedule_text} & 服务课程查询、教师班次和管理员统计页面，减少应用层重复 JOIN。 \\
 \code{v_student_timetable} & 学生、课程、教师、教室、星期、开始节次、结束节次 & 支持学生课表查询和时间冲突规则说明。 \\
+\code{v_enrollment_grade_detail} & 选课记录、课程、学期、最终成绩、绩点规则版本、等级、绩点、学分 & 通过 \code{grade_policy} 和 \code{grade_scale} 计算展示绩点，不在 \code{enrollment} 中保存 \code{gpa_point}。 \\
+\code{v_student_gpa_summary} & 学生、学期、总学分、加权绩点、已完成课程数 & 面向成绩单统计，按规则版本计算学期加权绩点。 \\
 \end{longtable}
 
-需要强调的是，视图中的 \code{selected_count} 和 \code{schedule_text} 是查询结果，不是基础表字段。它们不会引入基础表更新异常，也不需要触发器维护。视图把规范化结构转换为页面更容易使用的展示结构，体现了物理设计对逻辑设计的补偿。
+需要强调的是，视图中的 \code{selected_count}、\code{schedule_text} 和 \code{gpa_point} 是查询结果，不是基础表字段。它们不会引入基础表更新异常，也不需要触发器维护。视图把规范化结构转换为页面更容易使用的展示结构，体现了物理设计对逻辑设计的补偿。
 
 \section{高频查询}
 
-高频查询主要包括：学生查看可选课程、学生查看已选课程、教师查看某班次学生名单、管理员查看班次容量、成绩单查询、成绩分布统计。当前服务层已经在课程列表、学生可选课程和管理员班次统计中使用 \code{v_course_offering_detail}；成绩单中的 \code{gpa_point} 仍通过 CASE 表达式按 \code{final_score} 动态计算，避免保存派生字段。
+高频查询主要包括：学生查看可选课程、学生查看已选课程、教师查看某班次学生名单、管理员查看班次容量、成绩单查询、成绩分布统计。当前服务层已经在课程列表、学生可选课程和管理员班次统计中使用 \code{v_course_offering_detail}；成绩单中的 \code{gpa_point} 通过 \code{v_enrollment_grade_detail} 和 \code{v_student_gpa_summary} 按学期绑定的绩点规则版本动态计算，避免保存派生字段。
+
+{\footnotesize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.16}
+\begin{longtable}{p{0.23\textwidth}p{0.29\textwidth}p{0.25\textwidth}p{0.15\textwidth}}
+\caption{高频查询与物理优化方式}\label{tab:query-physical-optimization}\\
+\toprule
+高频查询 & 涉及表或视图 & 使用索引 & 优化目标 \\
+\midrule
+\endfirsthead
+\toprule
+高频查询 & 涉及表或视图 & 使用索引 & 优化目标 \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+学生查询当前课表 & \code{v_student_timetable}、\code{enrollment}、\code{course_schedule} & \code{idx_enrollment_student_status}、\code{idx_schedule_offering} & 快速按学生读取已选课程和时间片 \\
+查询教学班剩余名额 & \code{v_offering_selected_count}、\code{enrollment}、\code{course_offering} & \code{idx_enrollment_offering_status} & 聚合统计已选人数和剩余容量 \\
+检查时间冲突 & \code{course_schedule}、\code{enrollment}、\code{course_offering} & \code{idx_schedule_time}、\code{idx_enrollment_student_status} & 按星期和节次定位冲突时间片 \\
+检查同课跨班 & \code{enrollment}、\code{course_offering} & \code{idx_enrollment_student_status}、\code{idx_offering_semester_course} & 判断同一学生同学期同课程是否已有其他教学班 \\
+教师查看授课任务 & \code{v_course_offering_detail}、\code{course_offering} & \code{idx_offering_teacher_semester} & 按教师和学期筛选教学班 \\
+管理员按学期查看课程 & \code{v_course_offering_detail}、\code{course_offering} & \code{idx_offering_course_semester} & 支持课程管理和班次统计 \\
+查询成绩修改日志 & \code{score_change_log}、\code{enrollment}、\code{user_account} & \code{idx_score_log_enrollment}、\code{idx_score_log_changed_at} & 按选课记录或时间追踪成绩变更 \\
+查询学生绩点 & \code{v_enrollment_grade_detail}、\code{v_student_gpa_summary}、\code{grade_scale} & \code{idx_enrollment_student_status}、\code{idx_semester_grade_policy}、\code{idx_grade_scale_policy_range} & 按规则版本计算课程绩点和学期加权绩点 \\
+\end{longtable}
+}
 
 \section{性能风险与优化}
 
-当前系统数据量较小，查询性能足以支撑课程演示。但随着数据规模扩大，动态聚合人数和时间冲突查询可能成为热点。可继续优化的方向包括：
+演示环境已经导入较大的课程教学数据集，包括 4 个学院、100 名学生、30 名教师、50 门课程、175 个教学班和 1480 条选课记录。该规模能够支撑课程列表、学生课表、成绩单、成绩审计和管理员统计页面的展示，也能用于观察规范化结构下多表连接和聚合查询的响应情况。
+
+随着数据规模继续扩大，动态聚合人数和时间冲突查询可能成为热点。可继续优化的方向包括：
 
 \begin{itemize}
   \item 使用执行计划分析高频 SQL，确认索引是否被使用。
@@ -72,4 +104,4 @@
 
 \section{备份恢复}
 
-当前项目提供初始化脚本 \code{opengauss_setup/docker/init_db.sh}，可以重建数据库并导入样例数据。项目还提供 \code{migrate_3nf_20260608.sql}，用于旧结构迁移到 3NF 结构。正式运行环境中应增加定期备份、恢复演练和迁移版本管理，避免依赖手工操作。
+当前项目提供初始化脚本 \code{opengauss_setup/docker/init_db.sh}，可以重建数据库并导入样例数据。项目还提供 \code{migrate_3nf_20260608.sql}，用于在数据库原理1已有系统基础上复现规范化优化步骤。正式运行环境中应增加定期备份、恢复演练和脚本版本管理，避免依赖手工操作。

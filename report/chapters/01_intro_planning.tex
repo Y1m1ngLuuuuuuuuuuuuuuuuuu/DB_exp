@@ -4,7 +4,9 @@
 
 本项目是一个面向高校教务场景的学生选课成绩管理系统。系统需要支撑学生查询课程、提交选课和退课申请，教师录入成绩并查看成绩分布，管理员维护学期、课程、教学班、学生和教师基础资料。与普通信息展示系统相比，选课系统的核心难点在于数据联系复杂、完整性约束多、并发选课场景明显。课程容量、重复选课、上课时间冲突、先修课程、成绩录入和退课限制都属于典型数据库规则。
 
-项目当前采用 Python + Streamlit 实现界面，使用 psycopg2 连接 openGauss 数据库。数据库部署相关文件位于 \code{opengauss_setup/docker/}，核心建表脚本位于 \code{opengauss_setup/sql/init.sql}。项目没有使用 ORM，也没有使用 Alembic 等迁移框架，数据库模式主要由 SQL 文件维护。
+项目当前采用 Python + Streamlit 实现界面，使用 psycopg2 连接 openGauss 数据库。数据库部署相关文件位于 \code{opengauss_setup/docker/}，核心建表脚本位于 \code{opengauss_setup/sql/init.sql}。项目没有使用 ORM，也没有使用 Alembic 等模式管理框架，数据库模式主要由 SQL 文件维护。
+
+为便于表述，本文将某课程在特定学期、教师和教室下开设的具体班次统一称为“教学班”，对应数据库表 \code{course_offering}；“选课记录”对应 \code{enrollment} 表。
 
 \section{系统规划目标}
 
@@ -23,6 +25,35 @@
 
 本报告按照数据库设计流程组织章节：需求分析识别角色、功能、数据和规则；概念设计使用 ER 模型抽象实体和联系；逻辑设计把 ER 模型转换为关系模式；规范化设计分析函数依赖和范式；完整性设计讨论主键、外键、CHECK、UNIQUE 和应用层校验；事务与锁章节分析并发选课一致性；物理设计讨论数据类型、索引和性能；运行维护章节说明初始化、部署、安全和扩展。
 
-\section{本章课程知识点}
+\section{课程知识点对应关系}
 
-本章对应数据库系统设计流程中的规划阶段。规划阶段强调数据库系统建设的必要性、系统边界、软硬件环境、数据范围和设计目标。本项目的数据中心特征明显：无论学生选课、教师录入成绩还是管理员维护教学班，本质上都是围绕数据库中实体、联系和约束展开的操作。
+第 1 章对应数据库系统设计流程中的规划阶段。规划阶段强调数据库系统建设的必要性、系统边界、软硬件环境、数据范围和设计目标。本项目的数据中心特征明显：无论学生选课、教师录入成绩还是管理员维护教学班，本质上都是围绕数据库中实体、联系和约束展开的操作。
+
+表 \ref{tab:course-knowledge-map} 总结数据库原理2课程知识点与系统实现的对应关系。报告围绕这些知识点展开，而不是单纯描述页面功能。
+
+{\footnotesize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.18}
+\begin{longtable}{p{0.22\textwidth}p{0.50\textwidth}p{0.20\textwidth}}
+\caption{课程知识点与系统实现对应关系}\label{tab:course-knowledge-map}\\
+\toprule
+课程知识点 & 系统中的体现 & 报告章节 \\
+\midrule
+\endfirsthead
+\toprule
+课程知识点 & 系统中的体现 & 报告章节 \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+数据库设计流程 & 按规划、需求、概念、逻辑、规范化、物理、运行维护组织报告 & 第 1--10 章 \\
+ER 图 & 从学生、教师、课程、教学班、选课记录等实体抽取联系和基数 & 第 3 章 \\
+关系模型 & 使用 \code{enrollment} 转换学生与教学班的 M:N 联系，使用 \code{course_prerequisite} 表示课程自关联 & 第 4 章 \\
+规范化设计 & 在数据库原理1已有系统基础上优化基础表设计：使用 \code{course_schedule} 表达时间片，通过视图或查询处理已选人数和绩点等可计算信息 & 第 5 章 \\
+完整性约束 & 主键、外键、UNIQUE、CHECK、NOT NULL、DEFAULT 和跨表触发器共同约束数据 & 第 6 章 \\
+触发器 & 已实现角色一致性、先修合法性、选课完整性、容量一致性和成绩审计触发器 & 第 6 章、附录 \\
+事务与锁 & \code{select_course_tx()}、\code{DBSession} 和 \code{SELECT ... FOR UPDATE} 共同控制并发选课 & 第 7 章 \\
+物理设计 & 为教学班、时间片、选课记录、成绩日志建立索引，并通过视图封装高频查询 & 第 8 章 \\
+运行维护 & 使用初始化脚本、SQL 优化脚本、回滚型测试脚本和 LaTeX 构建脚本支持复现 & 第 9 章 \\
+\end{longtable}
+}

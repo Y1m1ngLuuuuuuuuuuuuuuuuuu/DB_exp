@@ -1,4 +1,3 @@
-\appendix
 \chapter{关键 SQL 与测试摘录}
 
 \section{选课事务函数摘录}
@@ -68,6 +67,26 @@ IF v_selected_count >= v_max_capacity THEN
 END IF;
 \end{lstlisting}
 
+同课跨班限制也由同一触发器完成。该规则需要同时查询 \code{enrollment} 与 \code{course_offering}，因此不适合只用单表唯一约束表达。
+
+\begin{lstlisting}[style=sqlstyle]
+SELECT COUNT(*) INTO v_same_course_count
+FROM enrollment e
+JOIN course_offering co_same
+  ON co_same.offering_id = e.offering_id
+WHERE e.student_id = NEW.student_id
+  AND e.status = 'selected'
+  AND co_same.semester_id = v_semester_id
+  AND co_same.course_id = v_course_id
+  AND co_same.offering_id <> NEW.offering_id;
+
+IF v_same_course_count > 0 THEN
+    RAISE EXCEPTION
+        'Student % has already selected another offering for course %',
+        NEW.student_id, v_course_id;
+END IF;
+\end{lstlisting}
+
 \section{成绩审计触发器摘录}
 
 成绩审计触发器要求业务层在同一事务中传入当前操作者，避免把日志操作者写死为管理员或空值。
@@ -89,7 +108,7 @@ VALUES
 
 \section{视图 SQL 摘录}
 
-\code{v_offering_selected_count} 通过聚合实时得到已选人数和剩余容量，替代基础表中的派生字段 \code{selected_count}。
+\code{v_offering_selected_count} 通过聚合实时得到已选人数和剩余容量，使基础表无需保存派生字段 \code{selected_count}。
 
 \begin{lstlisting}[style=sqlstyle]
 CREATE OR REPLACE VIEW v_offering_selected_count AS
@@ -108,7 +127,7 @@ GROUP BY co.offering_id, co.max_capacity;
 
 \section{SQL 测试结果摘录}
 
-\code{opengauss_setup/sql/test_triggers_constraints.sql} 使用事务和匿名块捕获预期异常，最后执行 \code{ROLLBACK}，不会污染样例数据。测试覆盖角色错配、先修自指、先修环路、容量超选、时间冲突、重复选课、成绩审计、退课限制和视图查询。一次测试输出摘录如下：
+\code{opengauss_setup/sql/test_triggers_constraints.sql} 使用事务和匿名块捕获预期异常，最后执行 \code{ROLLBACK}，不会污染样例数据。测试覆盖角色错配、先修自指、先修环路、容量超选、时间冲突、同课跨班、重复选课、成绩审计、退课限制和视图查询。一次测试输出摘录如下：
 
 \begin{lstlisting}[style=codestyle]
 PASS role check teacher-as-student failed
@@ -116,9 +135,175 @@ PASS self prerequisite failed
 PASS prerequisite cycle failed
 PASS capacity full failed
 PASS timetable conflict failed
+PASS same course different offering failed
 PASS unique student/offering failed
 PASS score update without user failed
 PASS score audit trigger inserted log row
 PASS completed enrollment drop failed
 Trigger and constraint tests finished with rollback.
 \end{lstlisting}
+
+\section{并发抢课测试脚本摘录}
+
+\code{scripts/concurrency_enrollment_test.py} 用于在两个独立数据库连接中同时调用 \code{select_course_tx()}。并发测试在本地 openGauss 容器中构造容量为 1 的教学班，最终只有一个学生选课成功。测试输出摘录如下：
+
+\begin{lstlisting}[style=codestyle]
+TST_CONC_STU_1: FAILED - Course offering 42 is full
+TST_CONC_STU_2: SUCCESS - selected
+success_count = 1
+failed_count = 1
+selected_count_in_db = 1
+\end{lstlisting}
+
+\section{数据库角色授权脚本摘录}
+
+\code{grant_roles_20260608.sql} 体现数据库管理中的最小权限思想。本地生成的 \code{opengauss_setup/sql/local/grant_demo_db_accounts_20260611.sql} 用于演示数据库登录账号与角色绑定。由于本地绑定脚本包含数据库账号密码，不进入公开仓库和报告正文。
+
+\begin{lstlisting}[style=sqlstyle]
+CREATE ROLE db_student_role;
+CREATE ROLE db_teacher_role;
+CREATE ROLE db_admin_role;
+CREATE ROLE db_app_role;
+
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
+
+GRANT SELECT ON
+    v_course_offering_detail,
+    v_offering_selected_count
+TO db_student_role;
+
+GRANT EXECUTE ON FUNCTION select_course_tx(VARCHAR, BIGINT)
+TO db_app_role;
+\end{lstlisting}
+
+\section{演示账号凭据策略摘录}
+
+演示业务账号使用业务身份编号作为登录名：学生用学号，教师用教师号，管理员用管理员编号。明文初始密码只保存在本地 \code{secrets/DEMO_ACCOUNT_CREDENTIALS.md}，SQL 中只保存 SHA-256 哈希。
+
+\begin{lstlisting}[style=codestyle]
+student username = student.student_id      # e.g. 20240001
+teacher username = teacher.teacher_id      # e.g. T001
+admin username   = admin_profile.admin_id  # e.g. A001
+
+python3 scripts/generate_large_demo_dataset.py
+\end{lstlisting}
+
+\section{绩点规则版本化 SQL 摘录}
+
+绩点不作为 \code{enrollment} 的基础字段保存，而是由规则版本和成绩区间计算。下面摘录展示 \code{grade_policy}、\code{grade_scale} 和计算函数的核心结构。
+
+\begin{lstlisting}[style=sqlstyle]
+CREATE TABLE grade_policy (
+    policy_id BIGSERIAL PRIMARY KEY,
+    policy_code VARCHAR(30) NOT NULL,
+    policy_name VARCHAR(100) NOT NULL,
+    version_no VARCHAR(20) NOT NULL,
+    effective_from DATE NOT NULL,
+    effective_to DATE,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    UNIQUE (policy_code, version_no)
+);
+
+CREATE TABLE grade_scale (
+    scale_id BIGSERIAL PRIMARY KEY,
+    policy_id BIGINT NOT NULL REFERENCES grade_policy(policy_id),
+    min_score DECIMAL(5,2) NOT NULL,
+    max_score DECIMAL(5,2) NOT NULL,
+    gpa_point DECIMAL(3,2) NOT NULL,
+    grade_label VARCHAR(10)
+);
+\end{lstlisting}
+
+\begin{lstlisting}[style=sqlstyle]
+CREATE OR REPLACE FUNCTION calculate_gpa(
+    p_score DECIMAL,
+    p_policy_id BIGINT
+) RETURNS DECIMAL(3,2) AS $$
+...
+    SELECT COUNT(*), MIN(gpa_point)
+      INTO v_match_count, v_gpa
+    FROM grade_scale
+    WHERE policy_id = p_policy_id
+      AND p_score >= min_score
+      AND p_score <= max_score;
+...
+$$ LANGUAGE plpgsql;
+\end{lstlisting}
+
+\code{test_grade_policy.sql} 覆盖绩点规则插入、区间重叠失败、\code{calculate_gpa(95)}、\code{calculate_gpa(59)} 以及绩点视图查询。回滚型测试输出摘录如下：
+
+\begin{lstlisting}[style=codestyle]
+PASS calculate_gpa 95 -> 4.00
+PASS calculate_gpa 59 -> 0.00
+PASS overlap grade scale failed
+PASS v_enrollment_grade_detail returned ... GPA rows
+PASS v_student_gpa_summary returned ... summary rows
+Grade policy tests finished with rollback.
+\end{lstlisting}
+
+\section{大规模演示数据验证摘录}
+
+最终演示数据由 \code{scripts/generate_large_demo_dataset.py} 使用固定随机种子生成，导入脚本位于本地 \code{opengauss_setup/sql/local/seed_large_demo_dataset_20260611.sql}。明文初始密码只保存在本地 \code{secrets/DEMO_ACCOUNT_CREDENTIALS.md}，不进入报告正文。数据规模摘要如下：
+
+\begin{lstlisting}[style=codestyle]
+Departments: 4
+Students: 100
+Teachers: 30
+Courses: 50
+Course offerings: 175
+Schedule slots: 214
+Enrollments: 1480
+Completed enrollments: 1000
+Selected enrollments: 425
+Dropped enrollments: 55
+Score change logs: 80
+\end{lstlisting}
+
+\code{validate_large_demo_dataset.sql} 对大规模数据进行只读验证，检查教学班容量、教室容量、重复选课、同课跨班、时间冲突、先修课、成绩状态、账号角色、先修环路和成绩审计日志。关键检查片段如下：
+
+\begin{lstlisting}[style=sqlstyle]
+WITH selected_count AS (
+    SELECT offering_id, COUNT(*) AS selected_count
+    FROM enrollment
+    WHERE status = 'selected'
+    GROUP BY offering_id
+)
+SELECT COUNT(*) AS violation_count
+FROM course_offering co
+LEFT JOIN selected_count sc ON sc.offering_id = co.offering_id
+WHERE COALESCE(sc.selected_count, 0) > co.max_capacity;
+
+SELECT COUNT(*) AS violation_count
+FROM enrollment e1
+JOIN enrollment e2
+  ON e1.student_id = e2.student_id
+ AND e1.enrollment_id < e2.enrollment_id
+JOIN course_offering co1 ON co1.offering_id = e1.offering_id
+JOIN course_offering co2 ON co2.offering_id = e2.offering_id
+JOIN course_schedule cs1 ON cs1.offering_id = co1.offering_id
+JOIN course_schedule cs2 ON cs2.offering_id = co2.offering_id
+WHERE e1.status = 'selected'
+  AND e2.status = 'selected'
+  AND co1.semester_id = co2.semester_id
+  AND cs1.weekday = cs2.weekday
+  AND cs1.start_section <= cs2.end_section
+  AND cs1.end_section >= cs2.start_section;
+\end{lstlisting}
+
+本地 openGauss 验证结果显示，容量超限、教室容量超限、重复选课、同课跨班、时间冲突、先修课不满足、成绩状态异常、角色错配、先修自指或环路、审计日志无效引用等违规项均为 0。绩点视图 smoke check 返回 \code{v_enrollment_grade_detail} 1480 行、\code{v_student_gpa_summary} 284 行。
+
+\section{教师评价扩展设计}
+
+教师评价不作为本系统当前主线功能实现。若后续扩展，可新增 \code{teaching_evaluation} 表，并把它作为选课记录完成后的附属业务实体。
+
+\begin{lstlisting}[style=sqlstyle]
+teaching_evaluation(
+    evaluation_id,
+    enrollment_id,
+    rating,
+    comment,
+    submitted_at
+)
+\end{lstlisting}
+
+设计上应保证一个 \code{enrollment} 最多评价一次，评分范围为 1 到 5，且只有 \code{completed} 状态的选课记录可以评价。教师侧宜查看聚合结果，例如平均分与评价人数，而不是直接查看学生身份。

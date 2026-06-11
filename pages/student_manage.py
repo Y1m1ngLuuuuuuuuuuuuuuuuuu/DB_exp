@@ -3,6 +3,7 @@ import pandas as pd
 from pages._guards import require_role
 from db.connection import query
 from services.student_service import list_students, create_student, update_student, delete_student
+from ui.components import render_app_header, render_empty_state
 
 _GENDER_LABEL = {"M": "男", "F": "女", "O": "其他"}
 _STATUS_OPTIONS = ["enrolled", "suspended", "graduated", "dropped"]
@@ -10,7 +11,7 @@ _STATUS_LABEL   = {"enrolled": "在籍", "suspended": "休学", "graduated": "�
 
 def render() -> None:
     require_role("admin")
-    st.header("学生信息维护")
+    render_app_header("学生信息维护", "维护学生档案、学籍状态和登录账号。")
 
     tab_list, tab_add = st.tabs(["学生列表", "新增学生"])
 
@@ -19,7 +20,7 @@ def render() -> None:
         students = list_students(keyword=kw or None)
 
         if not students:
-            st.info("无匹配学生")
+            render_empty_state("无匹配学生", "请调整搜索条件，或新增学生档案。")
             return
 
         df = pd.DataFrame([
@@ -96,7 +97,7 @@ def render() -> None:
             student_name = col2.text_input("姓名 *")
             col3, col4   = st.columns(2)
             username     = col3.text_input("登录名 *")
-            password     = col4.text_input("初始密码", value="123456", type="password")
+            password     = col4.text_input("初始密码 *", type="password")
             col5, col6   = st.columns(2)
             gender       = col5.selectbox("性别", ["M", "F", "O"], format_func=lambda x: _GENDER_LABEL[x])
             enroll_year  = col6.number_input("入学年份", 2000, 2030, 2025)
@@ -108,8 +109,8 @@ def render() -> None:
             email        = col10.text_input("邮箱")
 
             if st.form_submit_button("添加学生", type="primary"):
-                if not student_id.strip() or not student_name.strip() or not username.strip():
-                    st.error("学号、姓名、登录名不能为空")
+                if not student_id.strip() or not student_name.strip() or not username.strip() or not password:
+                    st.error("学号、姓名、登录名、初始密码不能为空")
                 else:
                     ok, msg = create_student({
                         "student_id": student_id.strip(), "student_name": student_name.strip(),

@@ -16,7 +16,7 @@
 
 课程和开课班次是本项目概念设计的关键。课程 \code{course} 保存课程号、课程名、课程类型、学分、学时、所属院系和状态；开课班次 \code{course_offering} 保存课程、学期、教师、教室、容量上限和班次状态。二者分离后，同一课程可在不同学期、不同教师、不同教室多次开设，而不会重复保存课程名称、学分、学时等基础信息。
 
-本次 3NF 重构后，旧的自由文本上课时间不再保存在 \code{course_offering} 中，而是由 \code{course_schedule(schedule_id, offering_id, weekday, start_section, end_section)} 表示。一个教学班可对应多个时间片，便于后续进行时间冲突检查。
+在数据库原理1系统基础上的规范化优化中，上课时间不作为自由文本保存在 \code{course_offering} 中，而是由 \code{course_schedule(schedule_id, offering_id, weekday, start_section, end_section)} 表示。一个教学班可对应多个时间片，便于后续进行时间冲突检查。
 
 \section{联系与基数}
 
@@ -43,7 +43,7 @@
     \label{fig:er-conceptual}
 \end{figure}
 
-图 \ref{fig:er-conceptual} 展示了系统核心实体和联系。图中字段名后缀 \code{_pk}、\code{_fk}、\code{_uk} 分别表示主键、外键和唯一约束。由于 Mermaid ER 图语法限制，复合约束以字段名后缀方式标注。
+图 \ref{fig:er-conceptual} 采用实体--联系图表达方式：矩形表示实体，菱形表示联系，连线上的 \code{1}、\code{N}、\code{0..1} 表示基数约束。为保证报告中的可读性，图中只保留每个实体的核心属性；完整字段、主键、外键和唯一约束在第 4 章逻辑关系模型中进一步展开。
 
 \section{从业务语义到概念模型}
 

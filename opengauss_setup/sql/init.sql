@@ -224,91 +224,91 @@ INSERT INTO major (major_id, major_name, dept_id) VALUES
 ('MA01', '数学与应用数学',   'MATH');
 
 INSERT INTO user_account (username, password_hash, role) VALUES
-('admin',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'admin'),
-('t_zhang',  '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'teacher'),
-('t_li',     '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'teacher'),
-('t_wang',   '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'teacher'),
-('t_sun',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'teacher'),
-('s_001',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_002',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_003',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_004',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_005',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_006',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_007',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_008',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_009',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_010',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_011',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_012',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student');
+('A001'      , 'aa2f2a6a615a46f1308d6428c56502c6156e6e250fc29ac495973af1ec7b3b0a', 'admin'),
+('T001'      , '1d8c517897a0c80497a566149d3cb0d7fbdce3cacfd1645ff438e25f88913ca3', 'teacher'),
+('T002'      , 'd03e29994d74943bf67c66788657d8f41037a06f2012a5d28bbf697e76e6968b', 'teacher'),
+('T003'      , '85c815d91406aa8355b051b3a166f80a7d0c0c86476b5e239333ebec3854691c', 'teacher'),
+('T004'      , '30cbe3354426dc724d0c85186d38c177ee6c18c3b396093646dbab81a34c8648', 'teacher'),
+('20240001'  , '2ba3aa3b5526695724b59b0904dd505761afb26d53f9761cf8ae48a14332be8f', 'student'),
+('20240002'  , '2cfac232cc996079f797aeb6c0dd7d8620a22f9fa0ff447adda341e820f73093', 'student'),
+('20240003'  , 'f3fa73168febe7fbeb6d9a6d49ca92cce7960875463e98da545b4a84dad2197d', 'student'),
+('20240004'  , '2fb3bb27f4d83409d227a9cc8f40681183796281e8f0a42d196b70cb73c99093', 'student'),
+('20240005'  , '1ff574fc70b65edcdf76ae80f3984690b332f9b9e71c2fce649beffdaed74aec', 'student'),
+('20240006'  , '15a613d501b4626266553eee91186e2c0c367c9fb2f269a3b6235036af659eae', 'student'),
+('20240007'  , '394aa5ab8fa3a29eab7542630b82507cadde342f544cd38117c51d475d8080e9', 'student'),
+('20240008'  , '70fcbf437ff8183ad085b29301b52413346892c6b0e8447a44c2b2e35848a59d', 'student'),
+('20240009'  , '467527c2a0e6ea503db8e6cdd8c6c7e4db6bcaa34e32d8e0528703912c4234fb', 'student'),
+('20240010'  , 'afa6487c660f4567c75c4abdf592975634cbd2f38875d955bd22116f82ca2787', 'student'),
+('20240011'  , '9489e430dceaf57351578cf5cd32361bc1f99adca8c836b7e1ea2b1581aefd33', 'student'),
+('20240012'  , 'ec460a3b9546035848b36339c293be1680953fc54fef1b16eca7693a5f2ac568', 'student');
 
 INSERT INTO admin_profile (admin_id, user_id, admin_name, phone)
 SELECT 'A001', user_id, '系统管理员', '010-88880000'
-FROM user_account WHERE username = 'admin';
+FROM user_account WHERE username = 'A001';
 
 INSERT INTO teacher (teacher_id, user_id, teacher_name, gender, dept_id, title, email)
 SELECT 'T001', user_id, '张明', 'M', 'CS', '副教授', 'zhangming@edu.cn'
-FROM user_account WHERE username = 't_zhang';
+FROM user_account WHERE username = 'T001';
 
 INSERT INTO teacher (teacher_id, user_id, teacher_name, gender, dept_id, title, email)
 SELECT 'T002', user_id, '李晓华', 'F', 'MATH', '讲师', 'lixiaohua@edu.cn'
-FROM user_account WHERE username = 't_li';
+FROM user_account WHERE username = 'T002';
 
 INSERT INTO teacher (teacher_id, user_id, teacher_name, gender, dept_id, title, email)
 SELECT 'T003', user_id, '王志强', 'M', 'CS', '讲师', 'wangzhiqiang@edu.cn'
-FROM user_account WHERE username = 't_wang';
+FROM user_account WHERE username = 'T003';
 
 INSERT INTO teacher (teacher_id, user_id, teacher_name, gender, dept_id, title, email)
 SELECT 'T004', user_id, '孙敏', 'F', 'MATH', '副教授', 'sunmin@edu.cn'
-FROM user_account WHERE username = 't_sun';
+FROM user_account WHERE username = 'T004';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240001', user_id, '王小明', 'M', 2024, 'CS01', '计科2401', 'wxm@stu.edu.cn'
-FROM user_account WHERE username = 's_001';
+FROM user_account WHERE username = '20240001';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240002', user_id, '陈雨欣', 'F', 2024, 'CS01', '计科2401', 'cyx@stu.edu.cn'
-FROM user_account WHERE username = 's_002';
+FROM user_account WHERE username = '20240002';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240003', user_id, '刘强', 'M', 2024, 'CS02', '软工2401', 'lq@stu.edu.cn'
-FROM user_account WHERE username = 's_003';
+FROM user_account WHERE username = '20240003';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240004', user_id, '赵雨桐', 'F', 2024, 'CS01', '计科2402', 'zyt@stu.edu.cn'
-FROM user_account WHERE username = 's_004';
+FROM user_account WHERE username = '20240004';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240005', user_id, '周子豪', 'M', 2024, 'CS01', '计科2402', 'zzh@stu.edu.cn'
-FROM user_account WHERE username = 's_005';
+FROM user_account WHERE username = '20240005';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240006', user_id, '林可欣', 'F', 2024, 'CS02', '软工2401', 'lkx@stu.edu.cn'
-FROM user_account WHERE username = 's_006';
+FROM user_account WHERE username = '20240006';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240007', user_id, '何俊杰', 'M', 2024, 'CS02', '软工2402', 'hjj@stu.edu.cn'
-FROM user_account WHERE username = 's_007';
+FROM user_account WHERE username = '20240007';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240008', user_id, '郭书瑶', 'F', 2024, 'CS02', '软工2402', 'gsy@stu.edu.cn'
-FROM user_account WHERE username = 's_008';
+FROM user_account WHERE username = '20240008';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240009', user_id, '许嘉宁', 'F', 2024, 'MA01', '数学2401', 'xjn@stu.edu.cn'
-FROM user_account WHERE username = 's_009';
+FROM user_account WHERE username = '20240009';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240010', user_id, '高远', 'M', 2024, 'MA01', '数学2401', 'gy@stu.edu.cn'
-FROM user_account WHERE username = 's_010';
+FROM user_account WHERE username = '20240010';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240011', user_id, '唐诗雨', 'F', 2024, 'MA01', '数学2402', 'tsy@stu.edu.cn'
-FROM user_account WHERE username = 's_011';
+FROM user_account WHERE username = '20240011';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240012', user_id, '冯博文', 'M', 2024, 'MA01', '数学2402', 'fbw@stu.edu.cn'
-FROM user_account WHERE username = 's_012';
+FROM user_account WHERE username = '20240012';
 
 INSERT INTO semester (semester_id, semester_name, start_date, end_date, selection_start, selection_end, status) VALUES
 ('2025-2026-1', '2025-2026学年第一学期',

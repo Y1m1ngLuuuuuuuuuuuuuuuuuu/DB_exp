@@ -7,13 +7,14 @@ from services.course_service import (
     list_courses, list_classrooms,
     create_offering, update_offering, delete_offering,
 )
+from ui.components import render_app_header, render_empty_state
 
 _STATUS_LABEL = {"open": "开放选课", "closed": "已关闭", "cancelled": "已取消"}
 _STATUS_OPTIONS = ["open", "closed", "cancelled"]
 
 def render() -> None:
     require_role("admin")
-    st.header("开课安排管理")
+    render_app_header("开课安排管理", "维护教学班、容量、教室和结构化上课时间。")
 
     tab_list, tab_add = st.tabs(["班次列表", "新增开课班次"])
 
@@ -42,7 +43,7 @@ def render() -> None:
         offerings = list_offerings(semester_id=sel_sem_id)
 
         if not offerings:
-            st.info("该学期暂无开课班次")
+            render_empty_state("该学期暂无开课班次", "创建教学班后会显示在列表中。")
         else:
             df = pd.DataFrame([
                 {

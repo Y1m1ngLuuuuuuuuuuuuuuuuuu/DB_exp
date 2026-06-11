@@ -23,11 +23,13 @@ DECLARE
     v_time_offering_1 BIGINT;
     v_time_offering_2 BIGINT;
     v_unique_offering BIGINT;
+    v_same_course_offering_1 BIGINT;
+    v_same_course_offering_2 BIGINT;
     v_score_enrollment BIGINT;
     v_log_count INTEGER;
     v_failed BOOLEAN;
 BEGIN
-    SELECT user_id INTO v_admin_user FROM user_account WHERE username = 'admin';
+    SELECT user_id INTO v_admin_user FROM user_account WHERE username = 'A001';
 
     INSERT INTO user_account (username, password_hash, role)
     VALUES ('tst_teacher_user', 'test_hash', 'teacher')
@@ -88,7 +90,8 @@ BEGIN
         ('TST_CAP', '测试容量课程', 'elective', 1.0, 16, 'CS'),
         ('TST_TIME1', '测试时间课程1', 'elective', 1.0, 16, 'CS'),
         ('TST_TIME2', '测试时间课程2', 'elective', 1.0, 16, 'CS'),
-        ('TST_UNIQ', '测试重复课程', 'elective', 1.0, 16, 'CS');
+        ('TST_UNIQ', '测试重复课程', 'elective', 1.0, 16, 'CS'),
+        ('TST_SAME', '测试同课跨班课程', 'elective', 1.0, 16, 'CS');
 
     v_failed := FALSE;
     BEGIN
@@ -199,6 +202,33 @@ BEGIN
     END;
     IF NOT v_failed THEN
         RAISE EXCEPTION 'Expected duplicate student/offering to fail';
+    END IF;
+
+    INSERT INTO course_offering (course_id, semester_id, teacher_id, classroom_id, max_capacity, status)
+    VALUES ('TST_SAME', v_semester_id, 'T001', 'TST_R2', 10, 'open')
+    RETURNING offering_id INTO v_same_course_offering_1;
+    INSERT INTO course_schedule (offering_id, weekday, start_section, end_section)
+    VALUES (v_same_course_offering_1, 7, 1, 2);
+
+    INSERT INTO course_offering (course_id, semester_id, teacher_id, classroom_id, max_capacity, status)
+    VALUES ('TST_SAME', v_semester_id, 'T001', 'TST_R2', 10, 'open')
+    RETURNING offering_id INTO v_same_course_offering_2;
+    INSERT INTO course_schedule (offering_id, weekday, start_section, end_section)
+    VALUES (v_same_course_offering_2, 7, 3, 4);
+
+    INSERT INTO enrollment (student_id, offering_id, status)
+    VALUES (v_student_id, v_same_course_offering_1, 'selected');
+
+    v_failed := FALSE;
+    BEGIN
+        INSERT INTO enrollment (student_id, offering_id, status)
+        VALUES (v_student_id, v_same_course_offering_2, 'selected');
+    EXCEPTION WHEN OTHERS THEN
+        v_failed := TRUE;
+        RAISE NOTICE 'PASS same course different offering failed: %', SQLERRM;
+    END;
+    IF NOT v_failed THEN
+        RAISE EXCEPTION 'Expected same student selecting another offering of same course/semester to fail';
     END IF;
 
     INSERT INTO enrollment (student_id, offering_id, status)

@@ -217,6 +217,7 @@ DECLARE
     v_selection_end TIMESTAMP;
     v_max_capacity INTEGER;
     v_selected_count INTEGER;
+    v_same_course_count INTEGER;
     v_conflict_count INTEGER;
     v_missing_prereq_count INTEGER;
     v_old_enrollment_id BIGINT;
@@ -313,6 +314,22 @@ BEGIN
         RAISE EXCEPTION 'Course offering % is full', NEW.offering_id;
     END IF;
 
+    SELECT COUNT(*) INTO v_same_course_count
+    FROM enrollment e
+    JOIN course_offering co_same
+      ON co_same.offering_id = e.offering_id
+    WHERE e.student_id = NEW.student_id
+      AND e.status = 'selected'
+      AND co_same.semester_id = v_semester_id
+      AND co_same.course_id = v_course_id
+      AND co_same.offering_id <> NEW.offering_id
+      AND (v_old_enrollment_id IS NULL OR e.enrollment_id <> v_old_enrollment_id);
+
+    IF v_same_course_count > 0 THEN
+        RAISE EXCEPTION 'Student % has already selected another offering for course % in semester %',
+            NEW.student_id, v_course_id, v_semester_id;
+    END IF;
+
     SELECT COUNT(*) INTO v_conflict_count
     FROM course_schedule target_schedule
     JOIN course_schedule selected_schedule
@@ -405,12 +422,18 @@ DECLARE
     v_enrollment_id BIGINT;
     v_existing_status VARCHAR(20);
 BEGIN
-    SELECT enrollment_id, status
-      INTO v_enrollment_id, v_existing_status
-    FROM enrollment
-    WHERE student_id = p_student_id
-      AND offering_id = p_offering_id
-    FOR UPDATE;
+    BEGIN
+        SELECT enrollment_id, status
+          INTO v_enrollment_id, v_existing_status
+        FROM enrollment
+        WHERE student_id = p_student_id
+          AND offering_id = p_offering_id
+        FOR UPDATE;
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            v_enrollment_id := NULL;
+            v_existing_status := NULL;
+    END;
 
     IF v_enrollment_id IS NOT NULL THEN
         IF v_existing_status = 'selected' THEN
@@ -576,5 +599,7 @@ CREATE INDEX IF NOT EXISTS idx_score_log_changed_at
     ON score_change_log (changed_at);
 CREATE INDEX IF NOT EXISTS idx_course_prereq_prereq
     ON course_prerequisite (prereq_course_id);
+CREATE INDEX IF NOT EXISTS idx_offering_semester_course
+    ON course_offering (semester_id, course_id);
 
 COMMIT;

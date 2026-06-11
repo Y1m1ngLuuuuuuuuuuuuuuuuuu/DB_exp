@@ -10,8 +10,8 @@ command -v mmdc
 mmdc --version || true
 
 echo "Rendering Mermaid diagrams..."
-mmdc -p puppeteer-config.json -i diagrams/er_conceptual.mmd -o figures/er_conceptual.png -b white -w 2400 -H 1600
-mmdc -p puppeteer-config.json -i diagrams/er_logical.mmd -o figures/er_logical.png -b white -w 2600 -H 1800
+mmdc -p puppeteer-config.json -i diagrams/er_conceptual.mmd -o figures/er_conceptual.png -b white -w 3200 -H 1900
+mmdc -p puppeteer-config.json -i diagrams/er_logical.mmd -o figures/er_logical.png -b white -w 2800 -H 1900
 
 echo "Compiling LaTeX report..."
 xelatex -interaction=nonstopmode main.tex

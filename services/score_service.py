@@ -1,41 +1,15 @@
 from db.connection import query, query_one, DBSession
 
-def calc_gpa(score: float) -> float:
-    if score >= 90: return 4.0
-    if score >= 85: return 3.7
-    if score >= 82: return 3.3
-    if score >= 78: return 3.0
-    if score >= 75: return 2.7
-    if score >= 72: return 2.3
-    if score >= 68: return 2.0
-    if score >= 64: return 1.5
-    if score >= 60: return 1.0
-    return 0.0
-
-def _gpa_point_sql(alias: str = "e") -> str:
-    return f"""
-           CASE
-               WHEN {alias}.final_score IS NULL THEN NULL
-               WHEN {alias}.final_score >= 90 THEN 4.0
-               WHEN {alias}.final_score >= 85 THEN 3.7
-               WHEN {alias}.final_score >= 82 THEN 3.3
-               WHEN {alias}.final_score >= 78 THEN 3.0
-               WHEN {alias}.final_score >= 75 THEN 2.7
-               WHEN {alias}.final_score >= 72 THEN 2.3
-               WHEN {alias}.final_score >= 68 THEN 2.0
-               WHEN {alias}.final_score >= 64 THEN 1.5
-               WHEN {alias}.final_score >= 60 THEN 1.0
-               ELSE 0.0
-           END"""
-
 def get_enrollments_for_offering(offering_id: int) -> list[dict]:
     return query(
-        f"""
+        """
         SELECT e.enrollment_id, e.student_id, e.status,
-               e.final_score, {_gpa_point_sql("e")} AS gpa_point,
+               e.final_score, vgd.gpa_point,
                s.student_name, s.class_name
         FROM enrollment e
         JOIN student s ON e.student_id = s.student_id
+        LEFT JOIN v_enrollment_grade_detail vgd
+          ON e.enrollment_id = vgd.enrollment_id
         WHERE e.offering_id = %s AND e.status != 'dropped'
         ORDER BY s.student_id
         """,
@@ -132,16 +106,18 @@ def update_score(
 
 def get_student_transcript(student_id: str) -> list[dict]:
     return query(
-        f"""
+        """
         SELECT c.course_name, c.credit, c.course_type,
                sem.semester_name, t.teacher_name,
-               e.final_score, {_gpa_point_sql("e")} AS gpa_point
-        FROM enrollment e
-        JOIN course_offering co ON e.offering_id = co.offering_id
-        JOIN course    c   ON co.course_id   = c.course_id
-        JOIN semester  sem ON co.semester_id = sem.semester_id
-        JOIN teacher   t   ON co.teacher_id  = t.teacher_id
-        WHERE e.student_id = %s AND e.status = 'completed'
+               vgd.final_score, vgd.grade_label, vgd.gpa_point,
+               vgd.policy_name, vgd.version_no
+        FROM v_enrollment_grade_detail vgd
+        JOIN course_offering co ON vgd.offering_id = co.offering_id
+        JOIN course    c   ON vgd.course_id    = c.course_id
+        JOIN semester  sem ON vgd.semester_id  = sem.semester_id
+        JOIN teacher   t   ON co.teacher_id    = t.teacher_id
+        WHERE vgd.student_id = %s
+          AND vgd.enrollment_status = 'completed'
         ORDER BY sem.start_date DESC, c.course_name
         """,
         (student_id,),
@@ -165,17 +141,30 @@ def get_score_distribution(offering_id: int) -> dict:
         else:         buckets["不及格"]  += 1
     return buckets
 
-def get_score_change_log(offering_id: int | None = None, limit: int = 100) -> list[dict]:
+def get_score_change_log(
+    offering_id: int | None = None,
+    semester_id: str | None = None,
+    teacher_id: str | None = None,
+    course_keyword: str | None = None,
+    student_keyword: str | None = None,
+    date_from=None,
+    date_to=None,
+    limit: int = 100,
+) -> list[dict]:
     sql = """
         SELECT scl.log_id, scl.changed_at, scl.old_score, scl.new_score, scl.reason,
                u.username AS changed_by,
                s.student_id, s.student_name,
-               c.course_name, co.offering_id
+               c.course_id, c.course_name, co.offering_id,
+               t.teacher_id, t.teacher_name,
+               sem.semester_id, sem.semester_name
         FROM score_change_log scl
         JOIN enrollment e    ON scl.enrollment_id       = e.enrollment_id
         JOIN student    s    ON e.student_id            = s.student_id
         JOIN course_offering co ON e.offering_id        = co.offering_id
         JOIN course     c    ON co.course_id            = c.course_id
+        JOIN teacher    t    ON co.teacher_id           = t.teacher_id
+        JOIN semester   sem  ON co.semester_id          = sem.semester_id
         JOIN user_account u  ON scl.changed_by_user_id = u.user_id
         WHERE 1=1
     """
@@ -183,6 +172,24 @@ def get_score_change_log(offering_id: int | None = None, limit: int = 100) -> li
     if offering_id is not None:
         sql += " AND co.offering_id=%s"
         args.append(offering_id)
+    if semester_id:
+        sql += " AND sem.semester_id=%s"
+        args.append(semester_id)
+    if teacher_id:
+        sql += " AND t.teacher_id=%s"
+        args.append(teacher_id)
+    if course_keyword:
+        sql += " AND (c.course_name LIKE %s OR c.course_id LIKE %s)"
+        args.extend([f"%{course_keyword}%", f"%{course_keyword}%"])
+    if student_keyword:
+        sql += " AND (s.student_name LIKE %s OR s.student_id LIKE %s)"
+        args.extend([f"%{student_keyword}%", f"%{student_keyword}%"])
+    if date_from is not None:
+        sql += " AND scl.changed_at >= %s"
+        args.append(date_from)
+    if date_to is not None:
+        sql += " AND scl.changed_at < (%s::date + INTERVAL '1 day')"
+        args.append(date_to)
     sql += " ORDER BY scl.changed_at DESC LIMIT %s"
     args.append(limit)
     return query(sql, args)

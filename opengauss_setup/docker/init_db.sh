@@ -10,6 +10,7 @@ DB_USER="${OPENGAUSS_USER:-gaussdb}"
 DB_PASSWORD="${OPENGAUSS_PASSWORD:-Secretpassword@123}"
 SQL_FILE="${1:-$PROJECT_DIR/opengauss_setup/sql/init.sql}"
 INTEGRITY_SQL_FILE="$PROJECT_DIR/opengauss_setup/sql/migrate_triggers_constraints_20260608.sql"
+GRADE_POLICY_SQL_FILE="$PROJECT_DIR/opengauss_setup/sql/migrate_grade_policy_20260611.sql"
 GAUSS_ENV='export GAUSSHOME=/usr/local/opengauss; export PATH="$GAUSSHOME/bin:$PATH"; export LD_LIBRARY_PATH="$GAUSSHOME/lib:${LD_LIBRARY_PATH:-}";'
 
 if [[ ! "$DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
@@ -48,6 +49,11 @@ docker exec -i "$CONTAINER_NAME" bash -lc "$GAUSS_ENV gsql -v ON_ERROR_STOP=1 -U
 if [[ -f "$INTEGRITY_SQL_FILE" ]]; then
   echo "Applying integrity triggers and views from: $INTEGRITY_SQL_FILE"
   docker exec -i "$CONTAINER_NAME" bash -lc "$GAUSS_ENV gsql -v ON_ERROR_STOP=1 -U '$DB_USER' --password '$DB_PASSWORD' -d '$DB_NAME' -p 5432" < "$INTEGRITY_SQL_FILE"
+fi
+
+if [[ -f "$GRADE_POLICY_SQL_FILE" ]]; then
+  echo "Applying grade policy versioning from: $GRADE_POLICY_SQL_FILE"
+  docker exec -i "$CONTAINER_NAME" bash -lc "$GAUSS_ENV gsql -v ON_ERROR_STOP=1 -U '$DB_USER' --password '$DB_PASSWORD' -d '$DB_NAME' -p 5432" < "$GRADE_POLICY_SQL_FILE"
 fi
 
 echo "openGauss database is ready."

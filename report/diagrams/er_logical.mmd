@@ -1,41 +1,54 @@
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#C5D6F0", "primaryTextColor": "#1F2937", "primaryBorderColor": "#7F9EC8", "lineColor": "#6B7280", "secondaryColor": "#A9CA70", "tertiaryColor": "#F18C54", "fontFamily": "PingFang SC, Noto Sans CJK SC, Arial"}}}%%
 erDiagram
-    DEPARTMENT ||--o{ MAJOR : "dept_id"
-    DEPARTMENT ||--o{ TEACHER : "dept_id"
-    DEPARTMENT ||--o{ COURSE : "dept_id"
-    USER_ACCOUNT ||--o| STUDENT : "user_id"
-    USER_ACCOUNT ||--o| TEACHER : "user_id"
-    USER_ACCOUNT ||--o| ADMIN_PROFILE : "user_id"
-    USER_ACCOUNT ||--o{ USER_SESSION : "user_id"
-    MAJOR ||--o{ STUDENT : "major_id"
-    COURSE ||--o{ COURSE_OFFERING : "course_id"
-    SEMESTER ||--o{ COURSE_OFFERING : "semester_id"
-    TEACHER ||--o{ COURSE_OFFERING : "teacher_id"
-    CLASSROOM ||--o{ COURSE_OFFERING : "classroom_id"
-    COURSE_OFFERING ||--o{ COURSE_SCHEDULE : "offering_id"
-    STUDENT ||--o{ ENROLLMENT : "student_id"
-    COURSE_OFFERING ||--o{ ENROLLMENT : "offering_id"
-    COURSE ||--o{ COURSE_PREREQUISITE : "course_id"
-    COURSE ||--o{ COURSE_PREREQUISITE : "prereq_course_id"
-    ENROLLMENT ||--o{ SCORE_CHANGE_LOG : "enrollment_id"
-    USER_ACCOUNT ||--o{ SCORE_CHANGE_LOG : "changed_by_user_id"
+    DEPARTMENT ||--o{ MAJOR : "FK dept_id"
+    DEPARTMENT ||--o{ TEACHER : "FK dept_id"
+    DEPARTMENT ||--o{ COURSE : "FK dept_id"
+
+    USER_ACCOUNT ||--o| STUDENT : "UK user_id"
+    USER_ACCOUNT ||--o| TEACHER : "UK user_id"
+    USER_ACCOUNT ||--o| ADMIN_PROFILE : "UK user_id"
+    USER_ACCOUNT ||--o{ USER_SESSION : "FK user_id"
+
+    MAJOR ||--o{ STUDENT : "FK major_id"
+
+    COURSE ||--o{ COURSE_OFFERING : "FK course_id"
+    GRADE_POLICY ||--o{ SEMESTER : "FK grade_policy_id"
+    GRADE_POLICY ||--o{ GRADE_SCALE : "FK policy_id"
+    SEMESTER ||--o{ COURSE_OFFERING : "FK semester_id"
+    TEACHER ||--o{ COURSE_OFFERING : "FK teacher_id"
+    CLASSROOM ||--o{ COURSE_OFFERING : "FK classroom_id"
+    COURSE_OFFERING ||--o{ COURSE_SCHEDULE : "FK offering_id"
+
+    STUDENT ||--o{ ENROLLMENT : "FK student_id"
+    COURSE_OFFERING ||--o{ ENROLLMENT : "FK offering_id"
+    ENROLLMENT ||--o{ SCORE_CHANGE_LOG : "FK enrollment_id"
+    USER_ACCOUNT ||--o{ SCORE_CHANGE_LOG : "FK changed_by"
+
+    COURSE ||--o{ COURSE_PREREQUISITE : "PK/FK course_id"
+    COURSE ||--o{ COURSE_PREREQUISITE : "PK/FK prereq_id"
 
     DEPARTMENT {
         varchar dept_id_pk
-        varchar dept_name
+        varchar dept_name_uk
+        varchar office_phone
     }
+
     MAJOR {
         varchar major_id_pk
         varchar major_name
         varchar dept_id_fk
+        varchar dept_major_uk
     }
+
     USER_ACCOUNT {
         bigserial user_id_pk
         varchar username_uk
         varchar password_hash
         varchar role
         varchar status
-        timestamp created_at
+        timestamp last_login_at
     }
+
     USER_SESSION {
         bigserial session_id_pk
         bigint user_id_fk
@@ -43,6 +56,7 @@ erDiagram
         timestamp expires_at
         timestamp revoked_at
     }
+
     STUDENT {
         varchar student_id_pk
         bigint user_id_fk_uk
@@ -51,6 +65,7 @@ erDiagram
         varchar class_name
         varchar status
     }
+
     TEACHER {
         varchar teacher_id_pk
         bigint user_id_fk_uk
@@ -59,11 +74,14 @@ erDiagram
         varchar title
         varchar status
     }
+
     ADMIN_PROFILE {
         varchar admin_id_pk
         bigint user_id_fk_uk
         varchar admin_name
+        varchar phone
     }
+
     SEMESTER {
         varchar semester_id_pk
         varchar semester_name
@@ -72,7 +90,27 @@ erDiagram
         timestamp selection_start
         timestamp selection_end
         varchar status
+        bigint grade_policy_id_fk
     }
+
+    GRADE_POLICY {
+        bigserial policy_id_pk
+        varchar policy_code_version_uk
+        varchar policy_name
+        date effective_from
+        date effective_to
+        varchar status
+    }
+
+    GRADE_SCALE {
+        bigserial scale_id_pk
+        bigint policy_id_fk
+        decimal min_score
+        decimal max_score
+        decimal gpa_point
+        varchar grade_label
+    }
+
     COURSE {
         varchar course_id_pk
         varchar course_name
@@ -82,12 +120,13 @@ erDiagram
         varchar dept_id_fk
         varchar status
     }
+
     CLASSROOM {
         varchar classroom_id_pk
-        varchar building
-        varchar room_no
+        varchar building_room_uk
         integer capacity
     }
+
     COURSE_OFFERING {
         bigserial offering_id_pk
         varchar course_id_fk
@@ -97,26 +136,31 @@ erDiagram
         integer max_capacity
         varchar status
     }
+
     COURSE_SCHEDULE {
         bigserial schedule_id_pk
         bigint offering_id_fk
         smallint weekday
         smallint start_section
         smallint end_section
+        varchar time_slice_uk
     }
+
     ENROLLMENT {
         bigserial enrollment_id_pk
         varchar student_id_fk
         bigint offering_id_fk
+        varchar student_offering_uk
         timestamp select_time
         varchar status
         decimal final_score
-        varchar remark
     }
+
     COURSE_PREREQUISITE {
         varchar course_id_pk_fk
         varchar prereq_course_id_pk_fk
     }
+
     SCORE_CHANGE_LOG {
         bigserial log_id_pk
         bigint enrollment_id_fk
@@ -124,5 +168,4 @@ erDiagram
         decimal new_score
         bigint changed_by_user_id_fk
         timestamp changed_at
-        varchar reason
     }
