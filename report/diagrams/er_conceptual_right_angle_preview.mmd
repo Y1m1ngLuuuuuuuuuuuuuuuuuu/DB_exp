@@ -1,0 +1,87 @@
+%%{init: {"theme": "base", "flowchart": {"htmlLabels": true, "rankSpacing": 110, "nodeSpacing": 55, "curve": "step"}, "themeVariables": {"primaryColor": "#C5D6F0", "primaryTextColor": "#1F2937", "primaryBorderColor": "#7F9EC8", "lineColor": "#6B7280", "secondaryColor": "#F18C54", "tertiaryColor": "#A9CA70", "edgeLabelBackground": "transparent", "fontFamily": "PingFang SC, Noto Sans CJK SC, Arial"}, "themeCSS": ".relation rect{clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);rx:0;ry:0;} .edgeLabel .labelBkg,.labelBkg{background-color:transparent!important;} .labelBkg span,.labelBkg p{background-color:transparent!important;color:#1F2937!important;}"}}%%
+flowchart LR
+    classDef entity fill:#C5D6F0,stroke:#7F9EC8,stroke-width:2px,color:#1F2937;
+    classDef relation fill:#F18C54,stroke:#C65F2A,stroke-width:2px,color:#3F2415;
+    classDef audit fill:#A9CA70,stroke:#7EA34B,stroke-width:2px,color:#1F2F16;
+
+    DEPT["院系<br/>dept_id, dept_name"]:::entity
+    MAJOR["专业<br/>major_id, major_name"]:::entity
+    USER["统一账号<br/>user_id, username, role"]:::entity
+    SESSION["用户会话<br/>session_id, token_hash"]:::audit
+    STUDENT["学生<br/>student_id, student_name"]:::entity
+    TEACHER["教师<br/>teacher_id, teacher_name"]:::entity
+    ADMIN["管理员档案<br/>admin_id, admin_name"]:::entity
+
+    SEMESTER["学期<br/>semester_id, selection_window"]:::entity
+    COURSE["课程<br/>course_id, course_name, credit"]:::entity
+    CLASSROOM["教室<br/>classroom_id, building_room"]:::entity
+    OFFERING["教学班<br/>offering_id, max_capacity"]:::entity
+    SCHEDULE["上课时间片<br/>weekday, section_range"]:::entity
+    ENROLLMENT["选课记录<br/>status, final_score"]:::entity
+    PREREQ["先修关系<br/>course_id, prereq_course_id"]:::entity
+    SCORELOG["成绩修改日志<br/>old_score, new_score"]:::audit
+
+    R_DEPT_MAJOR["<span style='display:inline-block;width:48px;text-align:center'>设置</span>"]:::relation
+    R_DEPT_TEACHER["<span style='display:inline-block;width:48px;text-align:center'>管理</span>"]:::relation
+    R_DEPT_COURSE["<span style='display:inline-block;width:48px;text-align:center'>开设</span>"]:::relation
+    R_USER_STUDENT["<span style='display:inline-block;width:48px;text-align:center'>对应</span>"]:::relation
+    R_USER_TEACHER["<span style='display:inline-block;width:48px;text-align:center'>对应</span>"]:::relation
+    R_USER_ADMIN["<span style='display:inline-block;width:48px;text-align:center'>对应</span>"]:::relation
+    R_USER_SESSION["<span style='display:inline-block;width:48px;text-align:center'>产生</span>"]:::relation
+    R_MAJOR_STUDENT["<span style='display:inline-block;width:48px;text-align:center'>培养</span>"]:::relation
+    R_COURSE_OFFERING["<span style='display:inline-block;width:48px;text-align:center'>形成</span>"]:::relation
+    R_SEMESTER_OFFERING["<span style='display:inline-block;width:48px;text-align:center'>安排</span>"]:::relation
+    R_TEACHER_OFFERING["<span style='display:inline-block;width:48px;text-align:center'>授课</span>"]:::relation
+    R_CLASSROOM_OFFERING["<span style='display:inline-block;width:48px;text-align:center'>承载</span>"]:::relation
+    R_OFFERING_SCHEDULE["<span style='display:inline-block;width:48px;text-align:center'>拆分</span>"]:::relation
+    R_STUDENT_ENROLLMENT["<span style='display:inline-block;width:48px;text-align:center'>提交</span>"]:::relation
+    R_OFFERING_ENROLLMENT["<span style='display:inline-block;width:48px;text-align:center'>接收</span>"]:::relation
+    R_COURSE_PREREQ_TARGET["<span style='display:inline-block;width:48px;text-align:center'>要求</span>"]:::relation
+    R_COURSE_PREREQ_SOURCE["<span style='display:inline-block;width:48px;text-align:center'>作为</span>"]:::relation
+    R_ENROLLMENT_LOG["<span style='display:inline-block;width:48px;text-align:center'>记录</span>"]:::relation
+    R_USER_LOG["<span style='display:inline-block;width:48px;text-align:center'>操作</span>"]:::relation
+
+    DEPT ---|1| R_DEPT_MAJOR
+    R_DEPT_MAJOR ---|N| MAJOR
+    DEPT ---|1| R_DEPT_TEACHER
+    R_DEPT_TEACHER ---|N| TEACHER
+    DEPT ---|1| R_DEPT_COURSE
+    R_DEPT_COURSE ---|N| COURSE
+
+    USER ---|1| R_USER_STUDENT
+    R_USER_STUDENT ---|0..1| STUDENT
+    USER ---|1| R_USER_TEACHER
+    R_USER_TEACHER ---|0..1| TEACHER
+    USER ---|1| R_USER_ADMIN
+    R_USER_ADMIN ---|0..1| ADMIN
+    USER ---|1| R_USER_SESSION
+    R_USER_SESSION ---|N| SESSION
+
+    MAJOR ---|1| R_MAJOR_STUDENT
+    R_MAJOR_STUDENT ---|N| STUDENT
+
+    COURSE ---|1| R_COURSE_OFFERING
+    R_COURSE_OFFERING ---|N| OFFERING
+    SEMESTER ---|1| R_SEMESTER_OFFERING
+    R_SEMESTER_OFFERING ---|N| OFFERING
+    TEACHER ---|1| R_TEACHER_OFFERING
+    R_TEACHER_OFFERING ---|N| OFFERING
+    CLASSROOM ---|1| R_CLASSROOM_OFFERING
+    R_CLASSROOM_OFFERING ---|N| OFFERING
+
+    OFFERING ---|1| R_OFFERING_SCHEDULE
+    R_OFFERING_SCHEDULE ---|N| SCHEDULE
+    STUDENT ---|1| R_STUDENT_ENROLLMENT
+    R_STUDENT_ENROLLMENT ---|N| ENROLLMENT
+    OFFERING ---|1| R_OFFERING_ENROLLMENT
+    R_OFFERING_ENROLLMENT ---|N| ENROLLMENT
+
+    COURSE ---|1| R_COURSE_PREREQ_TARGET
+    R_COURSE_PREREQ_TARGET ---|N| PREREQ
+    COURSE ---|1| R_COURSE_PREREQ_SOURCE
+    R_COURSE_PREREQ_SOURCE ---|N| PREREQ
+
+    ENROLLMENT ---|1| R_ENROLLMENT_LOG
+    R_ENROLLMENT_LOG ---|N| SCORELOG
+    USER ---|1| R_USER_LOG
+    R_USER_LOG ---|N| SCORELOG

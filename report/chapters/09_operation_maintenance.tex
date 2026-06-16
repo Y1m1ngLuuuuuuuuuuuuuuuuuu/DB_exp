@@ -2,29 +2,29 @@
 
 \section{数据库初始化与部署}
 
-openGauss 本地部署由 \code{opengauss_setup/docker/start_opengauss.sh} 和 \code{init_db.sh} 完成。前者启动 Docker 容器并调用初始化脚本，后者负责等待数据库可连接、重建 \code{course_system} 数据库、导入 \code{opengauss_setup/sql/init.sql}，并继续执行 \code{migrate_triggers_constraints_20260608.sql} 与 \code{migrate_grade_policy_20260611.sql}，以安装约束、触发器、函数、视图和绩点规则版本。
+openGauss 本地部署由容器启动流程和数据库初始化流程共同完成。前者启动 Docker 容器，后者负责等待数据库可连接、重建 \code{course_system} 数据库、导入基础结构和样例数据，并继续安装约束、触发器、函数、视图和绩点规则版本。
 
-这种方式便于课程演示和本地复现，但正式环境应避免随意重建数据库，建议使用 SQL 版本脚本和备份策略管理结构变更。
+% 这种方式便于课程演示和本地复现，但正式环境应避免随意重建数据库，建议使用 SQL 版本脚本和备份策略管理结构变更。
 
 \section{优化脚本与部署顺序}
 
-当前数据库结构由四个关键脚本支撑：\code{init.sql} 定义基础表、主键、外键、样例数据和基础索引；\code{migrate_3nf_20260608.sql} 面向数据库原理1已有系统进行规范化优化，包括建立 \code{course_schedule}、将已选人数和绩点改为查询层计算；\code{migrate_triggers_constraints_20260608.sql} 在规范化结构基础上补充业务唯一约束、CHECK、触发器、存储函数、视图和审计索引；\code{migrate_grade_policy_20260611.sql} 建立 \code{grade_policy}、\code{grade_scale}、\code{calculate_gpa()} 和绩点查询视图。
+当前数据库结构由四类 SQL 流程支撑：基础结构流程定义核心表、主键、外键、样例数据和基础索引；规范化优化流程面向数据库原理1已有系统进行结构优化，包括建立 \code{course_schedule}、将已选人数和绩点改为查询层计算；完整性增强流程在规范化结构基础上补充业务唯一约束、CHECK、触发器、存储函数、视图和审计索引；绩点规则流程建立 \code{grade_policy}、\code{grade_scale}、\code{calculate_gpa()} 和绩点查询视图。
 
 部署顺序需要遵循“基础表与数据先就绪，再安装复杂约束和触发器”的原则。原因是触发器会主动检查容量、角色和选课窗口，如果在样例数据修正前启用，可能导致初始化数据导入失败。当前 SQL 优化脚本在添加容量触发器前会修正已有样例数据中教学班容量超过教室容量的问题。
 
 \section{测试脚本与验证}
 
-\code{opengauss_setup/sql/test_triggers_constraints.sql} 是数据库层规则的回滚型验证脚本。它在一个事务中构造测试数据，覆盖角色错配、先修自指、先修环路、容量超选、时间冲突、同课跨班限制、重复选课、成绩审计、退课限制和视图查询，最后执行 \code{ROLLBACK}，不会污染样例数据。该脚本的存在使触发器和约束不仅停留在设计说明中，而是可以被重复验证。
+数据库层规则采用回滚型验证流程。该流程在一个事务中构造测试数据，覆盖角色错配、先修自指、先修环路、容量超选、时间冲突、同课跨班限制、重复选课、成绩审计、退课限制和视图查询，最后执行 \code{ROLLBACK}，不会污染样例数据。这一验证流程使触发器和约束不仅停留在设计说明中，而是可以被重复验证。
 
-\code{opengauss_setup/sql/test_grade_policy.sql} 用于验证绩点规则版本化，包括默认规则是否存在、区间重叠是否被触发器拒绝、\code{calculate_gpa()} 是否返回预期绩点，以及 \code{v_enrollment_grade_detail} 和 \code{v_student_gpa_summary} 是否能返回绩点结果。测试输出显示 \code{calculate_gpa(95)} 返回 \code{4.00}、\code{calculate_gpa(59)} 返回 \code{0.00}，并且重叠分数区间被触发器拒绝。
+绩点规则采用独立的回滚型验证流程，包括默认规则是否存在、区间重叠是否被触发器拒绝、\code{calculate_gpa()} 是否返回预期绩点，以及 \code{v_enrollment_grade_detail} 和 \code{v_student_gpa_summary} 是否能返回绩点结果。测试输出显示 \code{calculate_gpa(95)} 返回 \code{4.00}、\code{calculate_gpa(59)} 返回 \code{0.00}，并且重叠分数区间被触发器拒绝。
 
-\code{scripts/concurrency_enrollment_test.py} 是多连接并发验证脚本。它创建一个容量为 1 的测试教学班，并使用两个独立数据库连接同时调用 \code{select_course_tx()}，用于验证行级锁和触发器能否保证最终只有一个学生成功选课。在触发器与事务实现验证阶段，该脚本记录的结果为 \code{success_count = 1}、\code{failed_count = 1}、\code{selected_count_in_db = 1}。
+多连接并发验证程序创建一个容量为 1 的测试教学班，并使用两个独立数据库连接同时调用 \code{select_course_tx()}，用于验证行级锁和触发器能否保证最终只有一个学生成功选课。在触发器与事务实现验证阶段，该程序记录的结果为 \code{success_count = 1}、\code{failed_count = 1}、\code{selected_count_in_db = 1}。
 
 \section{大规模演示数据与验证}
 
-系统提供 \code{scripts/generate_large_demo_dataset.py} 生成最终演示数据。该脚本使用固定随机种子生成 4 个学院、11 个专业、100 名学生、30 名教师、3 名管理员、50 门课程、175 个教学班、214 个上课时间片、1480 条选课记录和 80 条成绩审计日志。生成的本地 SQL 位于 \code{opengauss_setup/sql/local/seed_large_demo_dataset_20260611.sql}，明文初始密码只写入 \code{secrets/DEMO_ACCOUNT_CREDENTIALS.md}，不进入报告正文。
+% 系统提供演示数据生成流程。该流程使用固定随机种子生成 4 个学院、11 个专业、100 名学生、30 名教师、3 名管理员、50 门课程、175 个教学班、214 个上课时间片、1480 条选课记录和 80 条成绩审计日志。生成的本地数据导入语句仅用于演示环境，明文初始密码只写入本地凭据文件，不进入报告正文。
 
-\code{opengauss_setup/sql/validate_large_demo_dataset.sql} 用于只读验证大规模数据质量。验证内容包括教学班容量、教室容量、重复选课、同课跨班、时间冲突、先修课、成绩合法性、账号角色一致性、先修环路和成绩审计日志。导入演示数据后的验证结果显示上述违规项均为 0，\code{score_change_log} 中包含 80 条由成绩更新触发器生成的审计记录。
+大规模数据质量采用只读验证流程。验证内容包括教学班容量、教室容量、重复选课、同课跨班、时间冲突、先修课、成绩合法性、账号角色一致性、先修环路和成绩审计日志。导入演示数据后的验证结果显示上述违规项均为 0，\code{score_change_log} 中包含 80 条由成绩更新触发器生成的审计记录。
 
 表 \ref{tab:operation-maintenance-flow} 总结当前项目从数据库初始化到报告生成的运行维护流程。
 
@@ -34,31 +34,31 @@ openGauss 本地部署由 \code{opengauss_setup/docker/start_opengauss.sh} 和 \
 \begin{longtable}{p{0.16\textwidth}p{0.28\textwidth}p{0.30\textwidth}p{0.18\textwidth}}
 \caption{数据库运行维护流程}\label{tab:operation-maintenance-flow}\\
 \toprule
-阶段 & 操作 & 脚本或文件 & 目的 \\
+阶段 & 操作 & 实现载体 & 目的 \\
 \midrule
 \endfirsthead
 \toprule
-阶段 & 操作 & 脚本或文件 & 目的 \\
+阶段 & 操作 & 实现载体 & 目的 \\
 \midrule
 \endhead
 \bottomrule
 \endfoot
-初始化基础表 & 创建核心表、主键、外键和基础索引 & \code{opengauss_setup/sql/init.sql} & 建立可运行数据库结构 \\
-导入样例数据 & 写入学院、专业、用户、课程、教学班、选课记录 & \code{opengauss_setup/sql/init.sql} & 支撑课程演示和测试 \\
-规范化优化 & 建立结构化时间片，并将派生展示值转为查询或视图计算 & \code{migrate_3nf_20260608.sql} & 提高规范化程度 \\
-安装触发器与视图 & 创建函数、触发器、业务约束和查询视图 & \code{migrate_triggers_constraints_20260608.sql} & 强化完整性和查询便利性 \\
-安装绩点规则 & 创建绩点规则表、规则分段、计算函数和绩点视图 & \code{migrate_grade_policy_20260611.sql} & 支持绩点规则版本化 \\
-生成大规模演示数据 & 生成 100 名学生、30 名教师、50 门课程、教学班、选课和成绩数据 & \code{scripts/generate_large_demo_dataset.py}、\code{seed_large_demo_dataset_20260611.sql} & 支撑页面演示和数据质量验证 \\
-验证大规模数据 & 检查容量、时间冲突、先修课、同课跨班、账号角色和审计日志 & \code{validate_large_demo_dataset.sql} & 确认演示数据满足数据库规则 \\
-执行回滚型测试 & 构造异常场景并回滚 & \code{test_triggers_constraints.sql} & 验证规则不会污染数据 \\
-执行绩点规则测试 & 检查绩点计算、区间重叠和绩点统计视图 & \code{test_grade_policy.sql} & 验证绩点规则配置正确 \\
-执行并发测试 & 两个连接同时抢容量为 1 的教学班 & \code{scripts/concurrency_enrollment_test.py} & 验证行级锁防止超选 \\
-数据库权限设计 & 创建分层数据库角色并授予最小权限 & \code{grant_roles_20260608.sql} & 支撑数据库管理课程知识点 \\
-演示账号凭据生成 & 生成随机初始密码、同步 SQL 哈希和本地凭据 & \code{scripts/generate_large_demo_dataset.py}、\code{secrets/DEMO_ACCOUNT_CREDENTIALS.md} & 避免公开仓库保存明文密码 \\
-数据库账号绑定 & 将演示数据库登录账号绑定到分层角色 & \code{opengauss_setup/sql/local/grant_demo_db_accounts_20260611.sql} & 演示最小权限落地方式 \\
-生成 ER 图 & 将 Mermaid 图转换为 PNG & \code{report/build_report.sh}、\code{report/diagrams/*.mmd} & 支撑概念和逻辑设计章节 \\
-编译 LaTeX 报告 & 使用 XeLaTeX 两次编译 & \code{report/build_report.sh}、\code{report/main.tex} & 生成最终 PDF \\
-后续备份恢复 & 定期导出、恢复演练、SQL 脚本版本记录 & 后续脚本或运维方案 & 降低正式运行风险 \\
+初始化基础表 & 创建核心表、主键、外键和基础索引 & 基础结构 SQL 流程 & 建立可运行数据库结构 \\
+导入样例数据 & 写入学院、专业、用户、课程、教学班、选课记录 & 初始化数据流程 & 支撑课程演示和测试 \\
+规范化优化 & 建立结构化时间片，并将派生展示值转为查询或视图计算 & 规范化优化 SQL 流程 & 提高规范化程度 \\
+安装触发器与视图 & 创建函数、触发器、业务约束和查询视图 & 完整性增强 SQL 流程 & 强化完整性和查询便利性 \\
+安装绩点规则 & 创建绩点规则表、规则分段、计算函数和绩点视图 & 绩点规则 SQL 流程 & 支持绩点规则版本化 \\
+生成大规模演示数据 & 生成 100 名学生、30 名教师、50 门课程、教学班、选课和成绩数据 & 演示数据生成程序与本地导入流程 & 支撑页面演示和数据质量验证 \\
+验证大规模数据 & 检查容量、时间冲突、先修课、同课跨班、账号角色和审计日志 & 只读数据质量验证流程 & 确认演示数据满足数据库规则 \\
+执行回滚型测试 & 构造异常场景并回滚 & 完整性回滚测试流程 & 验证规则不会污染数据 \\
+执行绩点规则测试 & 检查绩点计算、区间重叠和绩点统计视图 & 绩点规则回滚测试流程 & 验证绩点规则配置正确 \\
+执行并发测试 & 两个连接同时抢容量为 1 的教学班 & 多连接并发验证程序 & 验证行级锁防止超选 \\
+数据库权限设计 & 创建分层数据库角色并授予最小权限 & 最小权限授权流程 & 支撑数据库管理课程知识点 \\
+演示账号凭据生成 & 生成随机初始密码、同步 SQL 哈希和本地凭据 & 演示数据生成程序与本地凭据文件 & 避免公开仓库保存明文密码 \\
+数据库账号绑定 & 将演示数据库登录账号绑定到分层角色 & 本地数据库账号绑定流程 & 演示最小权限落地方式 \\
+生成 ER 图 & 将 Mermaid 图转换为报告图片 & 图像生成流程 & 支撑概念和逻辑设计章节 \\
+编译 LaTeX 报告 & 使用 XeLaTeX 两次编译 & 报告构建流程 & 生成最终 PDF \\
+后续备份恢复 & 定期导出、恢复演练、SQL 版本记录 & 后续运维方案 & 降低正式运行风险 \\
 \end{longtable}
 }
 
@@ -66,11 +66,11 @@ openGauss 本地部署由 \code{opengauss_setup/docker/start_opengauss.sh} 和 \
 
 应用层权限主要通过 \code{user_account.role}、页面守卫 \code{require_role()} 和服务层权限检查实现。教师成绩管理中，\code{score_service.can_manage_offering_score()} 会检查教师只能维护本人负责的开课班次；管理员具有全局维护能力。
 
-\code{opengauss_setup/sql/grant_roles_20260608.sql} 作为数据库级最小权限设计补充。脚本创建 \code{db_student_role}、\code{db_teacher_role}、\code{db_admin_role} 和 \code{db_app_role}，并对视图、基础表、序列和受控函数分层授权。进一步地，\code{scripts/generate_demo_credentials.py} 会在本地生成 \code{opengauss_setup/sql/local/grant_demo_db_accounts_20260611.sql}，将 \code{db_app_demo_user}、\code{db_student_demo_user}、\code{db_teacher_demo_user} 和 \code{db_admin_demo_user} 绑定到对应数据库角色。由于该脚本包含数据库登录密码，放入 \code{opengauss_setup/sql/local/} 并由 \code{.gitignore} 排除。课程演示仍主要通过应用账号连接 openGauss；数据库账号绑定脚本用于展示正式环境中如何把真实数据库账号绑定到最小权限角色。
+数据库级最小权限设计创建 \code{db_student_role}、\code{db_teacher_role}、\code{db_admin_role} 和 \code{db_app_role}，并对视图、基础表、序列和受控函数分层授权。进一步地，本地账号绑定流程将 \code{db_app_demo_user}、\code{db_student_demo_user}、\code{db_teacher_demo_user} 和 \code{db_admin_demo_user} 绑定到对应数据库角色。由于本地绑定流程包含数据库登录密码，只保存在本地环境中，不进入公开材料。课程演示仍主要通过应用账号连接 openGauss；数据库账号绑定流程用于展示正式环境中如何把真实数据库账号绑定到最小权限角色。
 
-\section{账号凭据管理}
+% \section{账号凭据管理}
 
-演示业务账号不再使用 \code{s_001}、\code{t_zhang}、\code{admin} 等临时登录名，而是使用业务身份编号：学生使用 \code{student_id}，教师使用 \code{teacher_id}，管理员使用 \code{admin_id}。初始化和演示数据 SQL 中只保存 SHA-256 的 \code{password_hash}。明文初始密码由 \code{scripts/generate_large_demo_dataset.py} 随机生成，并只写入本地 \code{secrets/DEMO_ACCOUNT_CREDENTIALS.md}。该文件不进入报告正文，也不应提交到公开仓库；公开文档只保留 \code{docs/DEMO_ACCOUNT_CREDENTIALS.example.md} 作为格式示例。
+% 演示业务账号不再使用 \code{s_001}、\code{t_zhang}、\code{admin} 等临时登录名，而是使用业务身份编号：学生使用 \code{student_id}，教师使用 \code{teacher_id}，管理员使用 \code{admin_id}。初始化和演示数据 SQL 中只保存 SHA-256 的 \code{password_hash}。明文初始密码由演示数据生成程序随机生成，并只写入本地凭据文件。该凭据文件不进入报告正文，也不应提交到公开仓库；公开文档只保留不含真实密码的格式示例。
 
 \section{日志审计}
 
@@ -80,7 +80,8 @@ openGauss 本地部署由 \code{opengauss_setup/docker/start_opengauss.sh} 和 \
 
 \code{DBSession} 对异常进行回滚，是当前项目一致性维护的重要基础。学生和教师创建流程、开课班次创建与更新时间片、选课、退课和成绩更新流程都使用事务。服务层函数通常返回 \code{(bool, message)}，页面根据返回结果提示用户。
 
-数据库层触发器抛出的异常会被服务层捕获并转换为用户可以理解的提示。例如，\code{selection_service.py} 将容量已满、时间冲突、先修课程未完成等数据库异常映射为中文提示；\code{score_service.py} 将缺少 \code{app.current_user_id} 的成绩更新异常映射为审计变量缺失提示。仍需补充的异常处理包括：数据库连接失败提示、SQL 脚本执行失败回滚策略、删除课程或学生时历史记录的保留策略等。
+数据库层触发器抛出的异常会被服务层捕获并转换为用户可以理解的提示。例如，选课服务将容量已满、时间冲突、先修课程条件不满足等数据库异常映射为中文提示；成绩服务将缺少 \code{app.current_user_id} 的成绩更新异常映射为审计变量缺失提示。
+% 正式部署阶段的异常处理还应覆盖数据库连接失败提示、SQL 执行失败回滚策略、删除课程或学生时历史记录的保留策略等场景。
 
 \section{视图与查询维护}
 
@@ -94,7 +95,7 @@ openGauss 本地部署由 \code{opengauss_setup/docker/start_opengauss.sh} 和 \
 
 图 \ref{fig:ui-login} 展示系统登录界面。登录入口只说明学生使用学号、教师使用教师编号、管理员使用管理员编号，不展示明文演示密码，符合账号凭据管理要求。
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{ui/01_login.png}
     \caption{系统登录界面}
@@ -103,7 +104,7 @@ openGauss 本地部署由 \code{opengauss_setup/docker/start_opengauss.sh} 和 \
 
 图 \ref{fig:ui-student-dashboard} 展示学生端首页。该页面汇总已选课程、本学期课程、已完成课程和绩点等信息，底层数据来自 \code{enrollment}、课程教学表以及绩点统计视图。
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{ui/02_student_dashboard.png}
     \caption{学生端课程概览界面}
@@ -112,7 +113,7 @@ openGauss 本地部署由 \code{opengauss_setup/docker/start_opengauss.sh} 和 \
 
 图 \ref{fig:ui-teacher-dashboard} 展示教师端首页。教师端重点呈现本人负责的教学班、学生人数、待录入成绩和成绩录入进度，体现了 \code{teacher}、\code{course_offering}、\code{enrollment} 与成绩服务之间的关系。
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{ui/06_teacher_dashboard.png}
     \caption{教师端教学任务概览界面}
@@ -121,21 +122,22 @@ openGauss 本地部署由 \code{opengauss_setup/docker/start_opengauss.sh} 和 \
 
 图 \ref{fig:ui-admin-dashboard} 展示管理员端首页。管理员端聚合学生、教师、课程、教学班、当前选课和成绩日志数量，主要用于运行维护和数据质量观察。
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=0.95\textwidth]{ui/08_admin_dashboard.png}
     \caption{管理员端系统概览界面}
     \label{fig:ui-admin-dashboard}
 \end{figure}
 
-课程查询、学生课表、成绩录入和成绩审计日志等细分页面在演示环境中可继续截图补充。截图索引文件 \code{report/UI_SCREENSHOT_INDEX.md} 记录了各页面截图与报告位置的对应关系；尚未插入 PDF 的页面列入 \code{report/UI_SCREENSHOT_TODO.md}，避免引用不存在的图片导致编译失败。
+课程查询、学生课表、成绩录入和成绩审计日志等细分页面在演示环境中可继续截图补充。未插入报告的页面由本地截图清单记录，避免引用不存在的图片导致编译失败。
 
 \section{数据安全}
 
-项目中密码以 SHA-256 哈希保存，持久登录 token 以哈希形式存入 \code{user_session}。这比明文保存更安全，但仍可继续改进，例如使用带盐的密码哈希算法、限制登录尝试次数、设置 HTTPS、定期清理过期会话。
+项目中密码以 SHA-256 哈希保存，持久登录 token 以哈希形式存入 \code{user_session}。
 
-\section{后续扩展}
+% 这比明文保存更安全，但仍可继续改进，例如使用带盐的密码哈希算法、限制登录尝试次数、设置 HTTPS、定期清理过期会话。
+% \section{后续扩展}
 
-后续可扩展方向包括：行政班实体拆分、生产环境密钥管理、备份恢复脚本、运行监控、更大规模并发压测和报表优化。这些内容可以作为运行维护阶段的设计完善点。
+% 后续可扩展方向包括：行政班实体拆分、生产环境密钥管理、备份恢复脚本、运行监控、更大规模并发压测和报表优化。这些内容可以作为运行维护阶段的设计完善点。
 
-课程结束后的教师评价模块适合作为后续扩展，而不作为本文主线功能。可设计 \code{teaching_evaluation(evaluation_id, enrollment_id, rating, comment, submitted_at)}，其中 \code{UNIQUE(enrollment_id)} 保证一次选课最多评价一次，\code{CHECK(rating BETWEEN 1 AND 5)} 保证评分合法，触发器可检查只有 \code{completed} 的选课记录且教学班结束后才能评价。教师端只查看 \code{v_teacher_evaluation_summary} 等聚合视图，避免直接暴露学生身份；管理员可根据管理需要查看明细或审计数据。
+% 课程结束后的教师评价模块适合作为后续扩展，而不作为本文主线功能。可设计 \code{teaching_evaluation(evaluation_id, enrollment_id, rating, comment, submitted_at)}，其中 \code{UNIQUE(enrollment_id)} 保证一次选课最多评价一次，\code{CHECK(rating BETWEEN 1 AND 5)} 保证评分合法，触发器可检查只有 \code{completed} 的选课记录且教学班结束后才能评价。教师端只查看 \code{v_teacher_evaluation_summary} 等聚合视图，避免直接暴露学生身份；管理员可根据管理需要查看明细或审计数据。

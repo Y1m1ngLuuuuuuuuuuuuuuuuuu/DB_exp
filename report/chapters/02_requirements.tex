@@ -2,7 +2,7 @@
 
 \section{用户角色}
 
-项目通过 \code{user_account.role} 区分 \code{admin}、\code{student}、\code{teacher} 三类角色。登录认证由 \code{services/auth_service.py} 实现，页面访问控制由 \code{pages/_guards.py} 中的 \code{require_role()} 完成。三类用户需求如下：
+项目通过 \code{user_account.role} 区分 \code{admin}、\code{student}、\code{teacher} 三类角色。登录认证由服务层完成，页面访问控制由角色守卫完成。三类用户需求如下：
 
 \begin{itemize}
   \item 学生：查看当前学期可选课程，提交选课，查看已选课程，按规则退课，查看成绩单和绩点。
@@ -12,28 +12,28 @@
 
 \section{功能需求}
 
-系统功能需求和真实代码对应关系见表 \ref{tab:function-requirements}。
+系统功能需求和实现层次见表 \ref{tab:function-requirements}。
 
 {\footnotesize
 \setlength{\tabcolsep}{3pt}
 \renewcommand{\arraystretch}{1.16}
 \begin{longtable}{p{2.7cm}p{6.7cm}p{3.9cm}}
-\caption{功能需求与项目文件对应关系}\label{tab:function-requirements}\\
+\caption{功能需求与实现层次对应关系}\label{tab:function-requirements}\\
 \toprule
-功能 & 当前实现 & 主要文件 \\
+功能 & 当前实现 & 实现层次 \\
 \midrule
 \endfirsthead
 \toprule
-功能 & 当前实现 & 主要文件 \\
+功能 & 当前实现 & 实现层次 \\
 \midrule
 \endhead
-登录与会话 & 用户名密码登录，Cookie 持久会话，按角色进入不同页面 & \code{services/auth_service.py}、\code{utils/auth_cookie.py}、\code{opengauss_setup/sql/add_user_session.sql} \\
-课程查询 & 学生、教师、管理员均可通过服务层查询课程与开课班次 & \code{services/course_service.py} \\
-选课 & 检查重复、容量、学期状态、选课窗口、先修课、时间冲突后写入 \code{enrollment} & \code{services/selection_service.py} \\
-退课 & 只能退本人已选且未录入成绩的课程，并检查学期和时间窗口 & \code{services/selection_service.py} \\
-课程与教学班管理 & 管理员维护课程、学期、开课班次和上课时间片 & \code{services/course_service.py}、\code{pages/course_manage.py} \\
-成绩管理 & 教师只能维护本人班次，管理员可维护全部班次，并记录成绩日志 & \code{services/score_service.py}、\code{pages/score_manage.py} \\
-基础资料维护 & 管理学生、教师资料并同步创建账号 & \code{services/student_service.py}、\code{services/teacher_service.py} \\
+登录与会话 & 用户名密码登录，Cookie 持久会话，按角色进入不同页面 & 认证服务、会话表和页面守卫 \\
+课程查询 & 学生、教师、管理员均可通过服务层查询课程与开课班次 & 课程查询服务与课程视图 \\
+选课 & 检查重复、容量、学期状态、选课窗口、先修课、时间冲突后写入 \code{enrollment} & 选课服务、数据库函数和触发器 \\
+退课 & 只能退本人已选且未录入成绩的课程，并检查学期和时间窗口 & 退课服务、事务和触发器 \\
+课程与教学班管理 & 管理员维护课程、学期、开课班次和上课时间片 & 管理页面、课程服务和数据库约束 \\
+成绩管理 & 教师只能维护本人班次，管理员可维护全部班次，并记录成绩日志 & 成绩服务、审计触发器和日志表 \\
+基础资料维护 & 管理学生、教师资料并同步创建账号 & 资料维护服务和角色一致性触发器 \\
 \bottomrule
 \end{longtable}
 }

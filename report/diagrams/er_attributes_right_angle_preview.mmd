@@ -1,0 +1,215 @@
+%%{init: {"theme": "base", "flowchart": {"htmlLabels": true, "rankSpacing": 80, "nodeSpacing": 36, "curve": "step"}, "themeVariables": {"primaryColor": "#A9CA70", "primaryTextColor": "#1F2937", "primaryBorderColor": "#7EA34B", "lineColor": "#6B7280", "secondaryColor": "#F18C54", "tertiaryColor": "#C5D6F0", "edgeLabelBackground": "transparent", "fontFamily": "PingFang SC, Noto Sans CJK SC, Arial"}, "themeCSS": ".relation rect{clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%);rx:0;ry:0;} .edgeLabel .labelBkg,.labelBkg{background-color:transparent!important;} .labelBkg span,.labelBkg p{background-color:transparent!important;color:#1F2937!important;}"}}%%
+flowchart LR
+    classDef entity fill:#A9CA70,stroke:#7EA34B,stroke-width:2px,color:#1F2937;
+    classDef attr fill:#C5D6F0,stroke:#7F9EC8,stroke-width:1.5px,color:#1F2937;
+    classDef relation fill:#F18C54,stroke:#C65F2A,stroke-width:2px,color:#3F2415;
+    classDef note fill:#FFFFFF,stroke:#D1D5DB,stroke-width:1px,color:#4B5563;
+
+    LEGEND["说明：绿色矩形=实体；蓝色椭圆=属性；橙色菱形=联系；PK/UK/FK 标出键属性"]:::note
+
+    %% 组织结构
+    DEPARTMENT["院系<br/>department"]:::entity
+    DEPT_ID(["dept_id<br/>PK"]):::attr
+    DEPT_NAME(["dept_name<br/>UK"]):::attr
+    OFFICE_PHONE(["office_phone"]):::attr
+    OFFICE_LOC(["office_location"]):::attr
+    DEPARTMENT --- DEPT_ID
+    DEPARTMENT --- DEPT_NAME
+    DEPARTMENT --- OFFICE_PHONE
+    DEPARTMENT --- OFFICE_LOC
+
+    MAJOR["专业<br/>major"]:::entity
+    MAJOR_ID(["major_id<br/>PK"]):::attr
+    MAJOR_NAME(["major_name"]):::attr
+    MAJOR_DEPT(["dept_id<br/>FK"]):::attr
+    MAJOR --- MAJOR_ID
+    MAJOR --- MAJOR_NAME
+    MAJOR --- MAJOR_DEPT
+
+    R_DEPT_MAJOR["设置"]:::relation
+    DEPARTMENT ---|1| R_DEPT_MAJOR
+    R_DEPT_MAJOR ---|N| MAJOR
+
+    %% 账户与角色
+    USER_ACCOUNT["统一账号<br/>user_account"]:::entity
+    USER_ID(["user_id<br/>PK"]):::attr
+    USERNAME(["username<br/>UK"]):::attr
+    PASSWORD_HASH(["password_hash"]):::attr
+    ROLE(["role"]):::attr
+    USER_STATUS(["status"]):::attr
+    USER_ACCOUNT --- USER_ID
+    USER_ACCOUNT --- USERNAME
+    USER_ACCOUNT --- PASSWORD_HASH
+    USER_ACCOUNT --- ROLE
+    USER_ACCOUNT --- USER_STATUS
+
+    STUDENT["学生<br/>student"]:::entity
+    STUDENT_ID(["student_id<br/>PK"]):::attr
+    STUDENT_UID(["user_id<br/>FK, UK"]):::attr
+    STUDENT_NAME(["student_name"]):::attr
+    STUDENT_MAJOR(["major_id<br/>FK"]):::attr
+    CLASS_NAME(["class_name"]):::attr
+    STUDENT_STATUS(["status"]):::attr
+    STUDENT --- STUDENT_ID
+    STUDENT --- STUDENT_UID
+    STUDENT --- STUDENT_NAME
+    STUDENT --- STUDENT_MAJOR
+    STUDENT --- CLASS_NAME
+    STUDENT --- STUDENT_STATUS
+
+    TEACHER["教师<br/>teacher"]:::entity
+    TEACHER_ID(["teacher_id<br/>PK"]):::attr
+    TEACHER_UID(["user_id<br/>FK, UK"]):::attr
+    TEACHER_NAME(["teacher_name"]):::attr
+    TEACHER_DEPT(["dept_id<br/>FK"]):::attr
+    TITLE(["title"]):::attr
+    TEACHER --- TEACHER_ID
+    TEACHER --- TEACHER_UID
+    TEACHER --- TEACHER_NAME
+    TEACHER --- TEACHER_DEPT
+    TEACHER --- TITLE
+
+    R_USER_STUDENT["对应"]:::relation
+    R_USER_TEACHER["对应"]:::relation
+    R_MAJOR_STUDENT["培养"]:::relation
+    USER_ACCOUNT ---|1| R_USER_STUDENT
+    R_USER_STUDENT ---|0..1| STUDENT
+    USER_ACCOUNT ---|1| R_USER_TEACHER
+    R_USER_TEACHER ---|0..1| TEACHER
+    MAJOR ---|1| R_MAJOR_STUDENT
+    R_MAJOR_STUDENT ---|N| STUDENT
+
+    %% 课程教学
+    COURSE["课程<br/>course"]:::entity
+    COURSE_ID(["course_id<br/>PK"]):::attr
+    COURSE_NAME(["course_name"]):::attr
+    COURSE_TYPE(["course_type"]):::attr
+    CREDIT(["credit"]):::attr
+    TOTAL_HOURS(["total_hours"]):::attr
+    COURSE_DEPT(["dept_id<br/>FK"]):::attr
+    COURSE --- COURSE_ID
+    COURSE --- COURSE_NAME
+    COURSE --- COURSE_TYPE
+    COURSE --- CREDIT
+    COURSE --- TOTAL_HOURS
+    COURSE --- COURSE_DEPT
+
+    SEMESTER["学期<br/>semester"]:::entity
+    SEMESTER_ID(["semester_id<br/>PK"]):::attr
+    SEMESTER_NAME(["semester_name"]):::attr
+    SELECTION_START(["selection_start"]):::attr
+    SELECTION_END(["selection_end"]):::attr
+    SEMESTER_STATUS(["status"]):::attr
+    SEMESTER --- SEMESTER_ID
+    SEMESTER --- SEMESTER_NAME
+    SEMESTER --- SELECTION_START
+    SEMESTER --- SELECTION_END
+    SEMESTER --- SEMESTER_STATUS
+
+    CLASSROOM["教室<br/>classroom"]:::entity
+    CLASSROOM_ID(["classroom_id<br/>PK"]):::attr
+    BUILDING(["building"]):::attr
+    ROOM_NO(["room_no"]):::attr
+    CAPACITY(["capacity"]):::attr
+    CLASSROOM --- CLASSROOM_ID
+    CLASSROOM --- BUILDING
+    CLASSROOM --- ROOM_NO
+    CLASSROOM --- CAPACITY
+
+    OFFERING["教学班<br/>course_offering"]:::entity
+    OFFERING_ID(["offering_id<br/>PK"]):::attr
+    OFFERING_COURSE(["course_id<br/>FK"]):::attr
+    OFFERING_SEM(["semester_id<br/>FK"]):::attr
+    OFFERING_TEACHER(["teacher_id<br/>FK"]):::attr
+    OFFERING_ROOM(["classroom_id<br/>FK"]):::attr
+    MAX_CAP(["max_capacity"]):::attr
+    OFFERING_STATUS(["status"]):::attr
+    OFFERING --- OFFERING_ID
+    OFFERING --- OFFERING_COURSE
+    OFFERING --- OFFERING_SEM
+    OFFERING --- OFFERING_TEACHER
+    OFFERING --- OFFERING_ROOM
+    OFFERING --- MAX_CAP
+    OFFERING --- OFFERING_STATUS
+
+    SCHEDULE["上课时间片<br/>course_schedule"]:::entity
+    SCHEDULE_ID(["schedule_id<br/>PK"]):::attr
+    SCHEDULE_OFFERING(["offering_id<br/>FK"]):::attr
+    WEEKDAY(["weekday"]):::attr
+    START_SECTION(["start_section"]):::attr
+    END_SECTION(["end_section"]):::attr
+    SCHEDULE --- SCHEDULE_ID
+    SCHEDULE --- SCHEDULE_OFFERING
+    SCHEDULE --- WEEKDAY
+    SCHEDULE --- START_SECTION
+    SCHEDULE --- END_SECTION
+
+    R_COURSE_OFFERING["形成"]:::relation
+    R_SEM_OFFERING["安排"]:::relation
+    R_TEACHER_OFFERING["授课"]:::relation
+    R_ROOM_OFFERING["承载"]:::relation
+    R_OFFERING_SCHEDULE["拆分"]:::relation
+    COURSE ---|1| R_COURSE_OFFERING
+    R_COURSE_OFFERING ---|N| OFFERING
+    SEMESTER ---|1| R_SEM_OFFERING
+    R_SEM_OFFERING ---|N| OFFERING
+    TEACHER ---|1| R_TEACHER_OFFERING
+    R_TEACHER_OFFERING ---|N| OFFERING
+    CLASSROOM ---|1| R_ROOM_OFFERING
+    R_ROOM_OFFERING ---|N| OFFERING
+    OFFERING ---|1| R_OFFERING_SCHEDULE
+    R_OFFERING_SCHEDULE ---|N| SCHEDULE
+
+    %% 选课成绩
+    ENROLLMENT["选课记录<br/>enrollment"]:::entity
+    ENROLLMENT_ID(["enrollment_id<br/>PK"]):::attr
+    ENROLL_STU(["student_id<br/>FK"]):::attr
+    ENROLL_OFFERING(["offering_id<br/>FK"]):::attr
+    SELECT_TIME(["select_time"]):::attr
+    ENROLL_STATUS(["status"]):::attr
+    FINAL_SCORE(["final_score"]):::attr
+    REMARK(["remark"]):::attr
+    ENROLLMENT --- ENROLLMENT_ID
+    ENROLLMENT --- ENROLL_STU
+    ENROLLMENT --- ENROLL_OFFERING
+    ENROLLMENT --- SELECT_TIME
+    ENROLLMENT --- ENROLL_STATUS
+    ENROLLMENT --- FINAL_SCORE
+    ENROLLMENT --- REMARK
+
+    SCORE_LOG["成绩修改日志<br/>score_change_log"]:::entity
+    LOG_ID(["log_id<br/>PK"]):::attr
+    LOG_ENROLL(["enrollment_id<br/>FK"]):::attr
+    OLD_SCORE(["old_score"]):::attr
+    NEW_SCORE(["new_score"]):::attr
+    CHANGED_BY(["changed_by_user_id<br/>FK"]):::attr
+    CHANGED_AT(["changed_at"]):::attr
+    SCORE_LOG --- LOG_ID
+    SCORE_LOG --- LOG_ENROLL
+    SCORE_LOG --- OLD_SCORE
+    SCORE_LOG --- NEW_SCORE
+    SCORE_LOG --- CHANGED_BY
+    SCORE_LOG --- CHANGED_AT
+
+    R_STUDENT_ENROLL["提交"]:::relation
+    R_OFFERING_ENROLL["接收"]:::relation
+    R_ENROLL_LOG["审计"]:::relation
+    STUDENT ---|1| R_STUDENT_ENROLL
+    R_STUDENT_ENROLL ---|N| ENROLLMENT
+    OFFERING ---|1| R_OFFERING_ENROLL
+    R_OFFERING_ENROLL ---|N| ENROLLMENT
+    ENROLLMENT ---|1| R_ENROLL_LOG
+    R_ENROLL_LOG ---|N| SCORE_LOG
+
+    %% 课程自关联
+    PREREQ["先修关系<br/>course_prerequisite"]:::entity
+    PREREQ_COURSE(["course_id<br/>PK, FK"]):::attr
+    PREREQ_PRE(["prereq_course_id<br/>PK, FK"]):::attr
+    PREREQ --- PREREQ_COURSE
+    PREREQ --- PREREQ_PRE
+    R_PREREQ_TARGET["要求"]:::relation
+    R_PREREQ_SOURCE["作为"]:::relation
+    COURSE ---|1| R_PREREQ_TARGET
+    R_PREREQ_TARGET ---|N| PREREQ
+    COURSE ---|1| R_PREREQ_SOURCE
+    R_PREREQ_SOURCE ---|N| PREREQ

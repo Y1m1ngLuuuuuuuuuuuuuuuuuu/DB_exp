@@ -2,171 +2,247 @@
 
 \section{从 ER 模型到关系模式}
 
-逻辑结构设计的任务是把概念结构设计中的实体、属性和联系转换为关系数据库可以直接实现的关系模式。第 4 章以“关系模式表格 + 主外键说明 + 多对多转换说明”为核心表达方式，说明 openGauss 数据库中各表的逻辑结构。
+逻辑结构设计的任务是把概念结构设计中的实体、属性和联系转换为关系数据库可以直接实现的关系模式。系统采用关系模型表达数据结构：实体转换为基本关系，一对多联系通常通过在多端保存外键实现，多对多联系转换为独立中间关系，多值属性转换为独立关系，自关联联系通过同一实体表的两个外键表达。
 
-本系统的转换原则如下：实体转换为基本关系；一对多联系通常通过在多端表中保存外键实现；多对多联系转换为独立中间关系；多值属性转换为独立关系；自关联联系通过同一实体表的两个外键表达。
+第 4 章采用“分模块关系模式定义 + 主键、候选键与外键约束汇总 + 多对多转换说明”的方式描述逻辑结构。正文不再使用完整字段列表大表作为主要表达，以避免字段名在窄列中被强行断行。
 
-\section{关系模式表格}
+\section{关系模式定义}
 
-表 \ref{tab:logical-relation-schema} 汇总了当前系统的主要关系模式。表中字段来自 \code{opengauss_setup/sql/init.sql} 及后续 SQL 优化脚本，主键、外键和唯一约束共同构成逻辑模型的完整性基础。
+根据概念结构设计结果，系统将实体及联系转换为关系模式。为便于说明，以下按照组织结构、账户与角色、课程教学、选课成绩四类模块列出核心关系模式。下划线字段表示主键，标注 UK 的字段表示候选键或唯一约束，箭头表示外键引用关系。
 
-{\scriptsize
-\setlength{\tabcolsep}{2pt}
-\renewcommand{\arraystretch}{1.16}
-\begin{longtable}{p{0.14\textwidth}p{0.30\textwidth}p{0.15\textwidth}p{0.23\textwidth}p{0.10\textwidth}}
-\caption{选课系统主要关系模式表}\label{tab:logical-relation-schema}\\
+\subsection{组织结构模块}
+
+\begin{description}[leftmargin=0pt,labelindent=0pt,labelwidth=0pt,labelsep=0pt,style=nextline]
+    \item[\code{department}]
+    \relschema{\code{department}(\pk{dept_id}, \uk{dept_name}, \code{office_phone}, \code{office_location})}
+
+    \item[\code{major}]
+    \relschema{\code{major}(\pk{major_id}, \code{major_name}, \uk{dept_id, major_name}, \fk{dept_id}{department.dept_id})}
+\end{description}
+
+\subsection{账户与角色模块}
+
+\begin{description}[leftmargin=0pt,labelindent=0pt,labelwidth=0pt,labelsep=0pt,style=nextline]
+    \item[\code{user_account}]
+    \relschema{\code{user_account}(\pk{user_id}, \uk{username}, \code{password_hash}, \code{role}, \code{status}, \code{last_login_at}, \code{created_at})}
+
+    \item[\code{user_session}]
+    \relschema{\code{user_session}(\pk{session_id}, \fk{user_id}{user_account.user_id}, \uk{token_hash}, \code{created_at}, \code{expires_at}, \code{revoked_at}, \code{last_seen_at})}
+
+    \item[\code{student}]
+    \relschema{\code{student}(\pk{student_id}, \fk{user_id}{user_account.user_id}, \code{student_name}, \code{gender}, \code{birth_date}, \code{enroll_year}, \fk{major_id}{major.major_id}, \code{class_name}, \code{phone}, \code{email}, \code{status})}
+    其中 \code{user_id} 具有唯一约束。
+
+    \item[\code{teacher}]
+    \relschema{\code{teacher}(\pk{teacher_id}, \fk{user_id}{user_account.user_id}, \code{teacher_name}, \code{gender}, \fk{dept_id}{department.dept_id}, \code{title}, \code{phone}, \code{email}, \code{status})}
+    其中 \code{user_id} 具有唯一约束。
+
+    \item[\code{admin_profile}]
+    \relschema{\code{admin_profile}(\pk{admin_id}, \fk{user_id}{user_account.user_id}, \code{admin_name}, \code{phone})}
+    其中 \code{user_id} 具有唯一约束。
+\end{description}
+
+\subsection{课程教学模块}
+
+\begin{description}[leftmargin=0pt,labelindent=0pt,labelwidth=0pt,labelsep=0pt,style=nextline]
+    \item[\code{semester}]
+    \relschema{\code{semester}(\pk{semester_id}, \code{semester_name}, \code{start_date}, \code{end_date}, \code{selection_start}, \code{selection_end}, \code{status}, \fk{grade_policy_id}{grade_policy.policy_id})}
+
+    \item[\code{grade_policy}]
+    \relschema{\code{grade_policy}(\pk{policy_id}, \uk{policy_code, version_no}, \code{policy_name}, \code{effective_from}, \code{effective_to}, \code{status}, \fk{created_by_user_id}{user_account.user_id}, \code{created_at})}
+
+    \item[\code{grade_scale}]
+    \relschema{\code{grade_scale}(\pk{scale_id}, \fk{policy_id}{grade_policy.policy_id}, \uk{policy_id, min_score, max_score}, \code{gpa_point}, \code{grade_label}, \code{sort_order})}
+
+    \item[\code{course}]
+    \relschema{\code{course}(\pk{course_id}, \code{course_name}, \code{course_type}, \code{credit}, \code{total_hours}, \fk{dept_id}{department.dept_id}, \code{description}, \code{status})}
+
+    \item[\code{classroom}]
+    \relschema{\code{classroom}(\pk{classroom_id}, \uk{building, room_no}, \code{capacity})}
+
+    \item[\code{course_offering}]
+    \relschema{\code{course_offering}(\pk{offering_id}, \fk{course_id}{course.course_id}, \fk{semester_id}{semester.semester_id}, \fk{teacher_id}{teacher.teacher_id}, \fk{classroom_id}{classroom.classroom_id}, \code{max_capacity}, \code{status})}
+
+    \item[\code{course_schedule}]
+    \relschema{\code{course_schedule}(\pk{schedule_id}, \fk{offering_id}{course_offering.offering_id}, \code{weekday}, \code{start_section}, \code{end_section})}
+    其中 \code{offering_id, weekday, start_section, end_section} 具有唯一约束。
+
+    \item[\code{course_prerequisite}]
+    \relschema{\code{course_prerequisite}(\pk{course_id}, \pk{prereq_course_id})}
+    两个字段均引用 \code{course.course_id}。
+\end{description}
+
+\subsection{选课成绩模块}
+
+\begin{description}[leftmargin=0pt,labelindent=0pt,labelwidth=0pt,labelsep=0pt,style=nextline]
+    \item[\code{enrollment}]
+    \relschema{\code{enrollment}(\pk{enrollment_id}, \fk{student_id}{student.student_id}, \fk{offering_id}{course_offering.offering_id}, \code{select_time}, \code{status}, \code{final_score}, \code{remark})}
+    其中 \code{student_id, offering_id} 具有唯一约束。
+
+    \item[\code{score_change_log}]
+    \relschema{\code{score_change_log}(\pk{log_id}, \fk{enrollment_id}{enrollment.enrollment_id}, \code{old_score}, \code{new_score}, \fk{changed_by_user_id}{user_account.user_id}, \code{changed_at}, \code{reason})}
+\end{description}
+
+上述关系模式保留了核心字段、主键、唯一约束和外键引用。完整字段类型和检查约束由数据库定义维护，正文重点展示关系模型的结构语义。
+
+\section{主键、候选键与外键约束}
+
+表 \ref{tab:logical-relation-schema} 汇总核心关系模式的主键、候选键与外键约束。表中不再列出完整字段列表，而是突出逻辑结构设计中最重要的键和引用关系。
+
+{\small
+\setlength{\tabcolsep}{2.5pt}
+\renewcommand{\arraystretch}{1.28}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.23\textwidth}>{\raggedright\arraybackslash}p{0.36\textwidth}>{\raggedright\arraybackslash}p{0.16\textwidth}}
+\caption{核心关系模式的主键、候选键与外键约束}\label{tab:logical-relation-schema}\\
 \toprule
-关系模式 & 主要属性 & 主键 / 候选键 & 外键 & 说明 \\
+关系模式 & 主键 / 候选键 & 外键 & 设计说明 \\
 \midrule
 \endfirsthead
 \toprule
-关系模式 & 主要属性 & 主键 / 候选键 & 外键 & 说明 \\
+关系模式 & 主键 / 候选键 & 外键 & 设计说明 \\
 \midrule
 \endhead
 \bottomrule
 \endfoot
 
 \code{department} &
-\code{dept_id, dept_name, office_phone, office_location} &
-PK: \code{dept_id}；UK: \code{dept_name} &
+PK: \code{dept_id}；\par
+UK: \code{dept_name} &
 无 &
-院系实体。 \\
+院系基础实体。 \\
 
 \code{major} &
-\code{major_id, major_name, dept_id} &
-PK: \code{major_id}；UK: \code{dept_id, major_name} &
-\code{dept_id -> department} &
-专业实体，隶属于院系。 \\
+PK: \code{major_id}；\par
+UK: \code{dept_id, major_name} &
+\code{dept_id} 引用 \code{department.dept_id} &
+专业隶属于院系。 \\
 
 \code{user_account} &
-\code{user_id, username, password_hash, role, status, last_login_at, created_at} &
-PK: \code{user_id}；UK: \code{username} &
+PK: \code{user_id}；\par
+UK: \code{username} &
 无 &
 统一认证账号。 \\
 
 \code{user_session} &
-\code{session_id, user_id, token_hash, created_at, expires_at, revoked_at, last_seen_at} &
-PK: \code{session_id}；UK: \code{token_hash} &
-\code{user_id -> user_account} &
-登录会话。 \\
+PK: \code{session_id}；\par
+UK: \code{token_hash} &
+\code{user_id} 引用 \code{user_account.user_id} &
+登录会话记录。 \\
 
 \code{student} &
-\code{student_id, user_id, student_name, gender, birth_date, enroll_year, major_id, class_name, phone, email, status} &
-PK: \code{student_id}；UK: \code{user_id} &
-\code{user_id -> user_account}；\code{major_id -> major} &
-学生档案。 \\
+PK: \code{student_id}；\par
+UK: \code{user_id} &
+\code{user_id} 引用 \code{user_account.user_id}；\par
+\code{major_id} 引用 \code{major.major_id} &
+学生业务档案。 \\
 
 \code{teacher} &
-\code{teacher_id, user_id, teacher_name, gender, dept_id, title, phone, email, status} &
-PK: \code{teacher_id}；UK: \code{user_id} &
-\code{user_id -> user_account}；\code{dept_id -> department} &
-教师档案。 \\
+PK: \code{teacher_id}；\par
+UK: \code{user_id} &
+\code{user_id} 引用 \code{user_account.user_id}；\par
+\code{dept_id} 引用 \code{department.dept_id} &
+教师业务档案。 \\
 
 \code{admin_profile} &
-\code{admin_id, user_id, admin_name, phone} &
-PK: \code{admin_id}；UK: \code{user_id} &
-\code{user_id -> user_account} &
+PK: \code{admin_id}；\par
+UK: \code{user_id} &
+\code{user_id} 引用 \code{user_account.user_id} &
 管理员档案。 \\
 
 \code{semester} &
-\code{semester_id, semester_name, start_date, end_date, selection_start, selection_end, status, grade_policy_id} &
 PK: \code{semester_id} &
-\code{grade_policy_id -> grade_policy} &
-学期、选课窗口与绩点规则版本。 \\
+\code{grade_policy_id} 引用 \code{grade_policy.policy_id} &
+学期和选课窗口。 \\
 
 \code{grade_policy} &
-\code{policy_id, policy_code, policy_name, version_no, effective_from, effective_to, status, created_by_user_id, created_at} &
-PK: \code{policy_id}；UK: \code{policy_code, version_no} &
-\code{created_by_user_id -> user_account} &
+PK: \code{policy_id}；\par
+UK: \code{policy_code, version_no} &
+\code{created_by_user_id} 引用 \code{user_account.user_id} &
 绩点规则版本。 \\
 
 \code{grade_scale} &
-\code{scale_id, policy_id, min_score, max_score, gpa_point, grade_label, sort_order} &
-PK: \code{scale_id}；UK: \code{policy_id, min_score, max_score} &
-\code{policy_id -> grade_policy} &
+PK: \code{scale_id}；\par
+UK: \code{policy_id, min_score, max_score} &
+\code{policy_id} 引用 \code{grade_policy.policy_id} &
 绩点分段规则。 \\
 
 \code{course} &
-\code{course_id, course_name, course_type, credit, total_hours, dept_id, description, status} &
 PK: \code{course_id} &
-\code{dept_id -> department} &
+\code{dept_id} 引用 \code{department.dept_id} &
 课程定义。 \\
 
 \code{classroom} &
-\code{classroom_id, building, room_no, capacity} &
-PK: \code{classroom_id}；UK: \code{building, room_no} &
+PK: \code{classroom_id}；\par
+UK: \code{building, room_no} &
 无 &
-教室实体。 \\
+教室基础实体。 \\
 
 \code{course_offering} &
-\code{offering_id, course_id, semester_id, teacher_id, classroom_id, max_capacity, status} &
 PK: \code{offering_id} &
-\code{course_id -> course}；\code{semester_id -> semester}；\code{teacher_id -> teacher}；\code{classroom_id -> classroom} &
-教学班。 \\
+\code{course_id} 引用 \code{course.course_id}；\par
+\code{semester_id} 引用 \code{semester.semester_id}；\par
+\code{teacher_id} 引用 \code{teacher.teacher_id}；\par
+\code{classroom_id} 引用 \code{classroom.classroom_id} &
+具体教学班。 \\
 
 \code{course_schedule} &
-\code{schedule_id, offering_id, weekday, start_section, end_section} &
-PK: \code{schedule_id}；UK: \code{offering_id, weekday, start_section, end_section} &
-\code{offering_id -> course_offering} &
-上课时间片。 \\
+PK: \code{schedule_id}；\par
+UK: \code{offering_id, weekday, start_section, end_section} &
+\code{offering_id} 引用 \code{course_offering.offering_id} &
+结构化时间片。 \\
 
 \code{course_prerequisite} &
-\code{course_id, prereq_course_id} &
 PK: \code{course_id, prereq_course_id} &
-\code{course_id -> course}；\code{prereq_course_id -> course} &
+\code{course_id} 引用 \code{course.course_id}；\par
+\code{prereq_course_id} 引用 \code{course.course_id} &
 课程自关联。 \\
 
 \code{enrollment} &
-\code{enrollment_id, student_id, offering_id, select_time, status, final_score, remark} &
-PK: \code{enrollment_id}；UK: \code{student_id, offering_id} &
-\code{student_id -> student}；\code{offering_id -> course_offering} &
-选课记录。 \\
+PK: \code{enrollment_id}；\par
+UK: \code{student_id, offering_id} &
+\code{student_id} 引用 \code{student.student_id}；\par
+\code{offering_id} 引用 \code{course_offering.offering_id} &
+选课关系。 \\
 
 \code{score_change_log} &
-\code{log_id, enrollment_id, old_score, new_score, changed_by_user_id, changed_at, reason} &
 PK: \code{log_id} &
-\code{enrollment_id -> enrollment}；\code{changed_by_user_id -> user_account} &
-成绩审计。 \\
+\code{enrollment_id} 引用 \code{enrollment.enrollment_id}；\par
+\code{changed_by_user_id} 引用 \code{user_account.user_id} &
+成绩审计日志。 \\
 
 \end{longtable}
 }
 
-\section{主键、候选键与唯一约束说明}
+主键用于保证实体完整性。系统中学生、教师、课程等业务实体使用稳定业务编号作为主键；会话、教学班、选课记录、日志和绩点规则等记录型数据使用代理主键，便于自动生成和长期维护。候选键和唯一约束用于表达业务唯一性，例如登录账号唯一、账号与角色档案一对一、同一学生不能重复选择同一教学班、同一教学班不能重复登记同一时间片等。
 
-主键用于保证实体完整性。系统中大多数业务实体使用稳定业务编号作为主键，例如 \code{student.student_id}、\code{teacher.teacher_id} 和 \code{course.course_id}；会话、教学班、选课记录和日志等事件型数据使用 \code{BIGSERIAL} 代理主键，例如 \code{offering_id}、\code{enrollment_id} 和 \code{log_id}。这种设计兼顾了业务可读性和事件记录的自动增长需求。
+\section{外键与参照完整性}
 
-候选键和唯一约束用于表达业务唯一性。\code{user_account.username} 保证登录名唯一；\code{student.user_id}、\code{teacher.user_id} 和 \code{admin_profile.user_id} 保证一个账号最多对应一种同类业务档案；\code{enrollment(student_id, offering_id)} 保证同一学生不能重复选择同一教学班；\code{course_schedule(offering_id, weekday, start_section, end_section)} 保证同一教学班不会重复登记同一时间片。
+外键用于表达关系模式之间的参照完整性。组织结构中，专业引用院系；人员档案中，学生、教师和管理员档案引用统一账号；课程教学中，教学班引用课程、学期、教师和教室；选课成绩中，选课记录引用学生和教学班，成绩审计日志引用选课记录和操作账号。
 
-此外，\code{department.dept_name}、\code{major(dept_id, major_name)} 和 \code{classroom(building, room_no)} 等业务唯一约束进一步把现实语义固化到数据库层，有利于减少重复数据。
+这些外键保证了“不能为不存在的学生选课”“不能为不存在的教学班登记时间片”“不能记录不存在选课记录的成绩修改”“学期不能引用不存在的绩点规则”等基本规则。角色类型一致性、教学班容量不超过教室容量、先修课程环路和选课时间冲突属于跨表业务规则，普通外键不能完整表达，系统通过触发器进一步维护。
 
-\section{外键与参照完整性说明}
+\section{多对多关系和自关联关系转换}
 
-外键用于表达关系模式之间的参照完整性。组织结构中，\code{major.dept_id} 引用 \code{department.dept_id}；人员档案中，\code{student.user_id}、\code{teacher.user_id} 和 \code{admin_profile.user_id} 引用 \code{user_account.user_id}；课程教学中，\code{course_offering} 通过 \code{course_id}、\code{semester_id}、\code{teacher_id} 和 \code{classroom_id} 分别引用课程、学期、教师和教室；选课成绩中，\code{enrollment} 引用学生和教学班，\code{score_change_log} 引用选课记录和操作账号。
-
-这些外键保证了“不能为不存在的学生选课”“不能为不存在的教学班登记时间片”“不能记录不存在选课记录的成绩修改”“学期不能引用不存在的绩点规则”等基本规则。需要注意的是，角色类型一致性、教学班容量不超过教室容量、先修课程环路和选课时间冲突属于跨表业务规则，普通外键不能完整表达，系统已在第 6 章通过触发器进一步说明。
-
-\section{多对多联系转换}
-
-学生与教学班之间是典型多对多联系：一个学生可以选择多个教学班，一个教学班也可以被多个学生选择。若直接在学生表中保存课程列表，或在教学班表中保存学生列表，都会产生非原子属性并破坏第一范式。因此逻辑设计使用 \code{enrollment} 作为中间关系，把 M:N 联系转换为两个 1:N 联系：
+学生与教学班之间是典型多对多关系：一个学生可以选择多个教学班，一个教学班也可以被多个学生选择。若直接在学生表中保存课程列表，或在教学班表中保存学生列表，都会产生非原子属性并破坏第一范式。因此逻辑设计使用 \code{enrollment} 作为中间关系，把多对多关系转换为两个一对多关系：
 
 \begin{itemize}
   \item \code{student} 与 \code{enrollment} 构成 1:N，一名学生可以对应多条选课记录；
   \item \code{course_offering} 与 \code{enrollment} 构成 1:N，一个教学班可以对应多条选课记录。
 \end{itemize}
 
-\code{enrollment} 不只是连接表，也保存联系属性。\code{select_time} 表示选课时间，\code{status} 表示选课状态，\code{final_score} 表示该学生在该教学班中的最终成绩，\code{remark} 保存备注。因此，把 \code{enrollment} 设计为独立关系既解决了多对多转换，也为退课、成绩录入和成绩审计提供了数据基础。
+\code{enrollment} 不只是连接表，也保存联系属性。\code{select_time} 表示选课时间，\code{status} 表示选课状态，\code{final_score} 表示该学生在该教学班中的最终成绩，\code{remark} 保存备注。\code{UNIQUE(student_id, offering_id)} 防止重复选择同一教学班，同课跨班限制由选课完整性触发器进一步保证。
 
-课程与先修课程之间也是多对多自关联。一门课程可以有多门先修课程，一门课程也可以作为多门课程的先修课。系统使用 \code{course_prerequisite(course_id, prereq_course_id)} 表达该自关联，其中两个字段都引用 \code{course.course_id}，复合主键保证同一先修关系不会重复登记。
+课程与先修课程之间存在自关联。一门课程可以有多门先修课程，一门课程也可以作为多门课程的先修课。系统使用 \code{course_prerequisite(course_id, prereq_course_id)} 表达该自关联，其中两个字段都引用 \code{course.course_id}，复合主键保证同一先修关系不会重复登记，检查约束和触发器用于防止自指与环路。
 
 \section{课程定义、教学班与时间片}
 
 \code{course} 与 \code{course_offering} 的分离是逻辑设计中的关键点。\code{course} 保存课程定义，例如课程名称、课程类型、学分、总学时和所属学院；\code{course_offering} 保存某课程在某学期、由某教师、在某教室开设的具体教学班。这样，同一课程在不同学期或不同教师下开班时，不需要重复保存课程名称、学分和学时，减少了更新异常。
 
-\code{course_schedule} 则用于表达教学班的多值时间属性。一个教学班可以有多个上课时间片，因此逻辑设计将时间片独立成表，每行保存 \code{weekday, start_section, end_section}。该设计使数据库能够直接按星期和节次进行时间冲突检查，而不是依赖应用层解析展示文本。
+\code{course_schedule} 用于表达教学班的多值时间属性。一个教学班可以有多个上课时间片，因此逻辑设计将时间片独立成表，每行保存 \code{weekday}、\code{start_section} 和 \code{end_section}。该设计使数据库能够直接按星期和节次进行时间冲突检查，而不是依赖应用层解析展示文本。
 
 \section{辅助逻辑关系模型图}
 
-第 4 章以关系模式表格和主外键说明作为主要证据。图 \ref{fig:er-logical} 作为辅助图，用于从整体上观察各关系模式之间的连接关系；完整字段、主键、外键和唯一约束以表 \ref{tab:logical-relation-schema} 为准。
+第 4 章以关系模式定义和主外键约束说明作为主要证据。图 \ref{fig:er-logical} 作为辅助图，用于从整体上观察各关系模式之间的连接关系；主键、候选键、外键和唯一约束以表 \ref{tab:logical-relation-schema} 为准。
 
 \begin{figure}[htbp]
     \centering

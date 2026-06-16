@@ -2,7 +2,7 @@
 
 \section{规范化分析对象与方法}
 
-规范化设计的目标是在保证业务语义完整表达的前提下，减少数据冗余，避免插入异常、删除异常和更新异常。第 5 章以系统数据库 schema 为对象，对核心关系模式进行函数依赖、候选键、第一范式、第二范式、第三范式和 BCNF 分析。主要依据为 \code{opengauss_setup/sql/init.sql}、\code{opengauss_setup/sql/migrate_3nf_20260608.sql} 和 \code{opengauss_setup/sql/add_user_session.sql}。其中 \code{migrate_3nf_20260608.sql} 用于说明数据库原理1系统基础上的规范化优化策略，而不是单纯的版本变更记录。
+规范化设计的目标是在保证业务语义完整表达的前提下，减少数据冗余，避免插入异常、删除异常和更新异常。第 5 章以系统最终数据库结构为对象，对核心关系模式进行函数依赖、候选键、第一范式、第二范式、第三范式和 BCNF 分析。相关分析依据数据库中已经落地的表、字段、约束、触发器和视图，而不是单纯的开发过程记录。
 
 系统将组织结构、账户认证、角色档案、课程定义、开课班次、上课时间、选课记录、成绩变更日志和绩点规则拆分为相对独立的关系模式。该设计体现了从 ER 模型到关系模型的转换过程，也为完整性约束、事务控制和后续维护提供了基础。报告只把 SQL 中已经存在的表、字段、主键、外键、唯一约束、CHECK 约束、触发器和视图作为“已实现”；行政班实体等尚未落地的机制仍作为后续改进讨论。
 
@@ -23,6 +23,7 @@
 {\scriptsize
 \setlength{\tabcolsep}{2pt}
 \renewcommand{\arraystretch}{1.18}
+\newcommand{\fddep}[1]{#1\par}
 \begin{longtable}{p{0.13\textwidth}p{0.17\textwidth}p{0.27\textwidth}p{0.16\textwidth}p{0.19\textwidth}}
 \caption{核心关系模式的函数依赖与范式审计}\label{tab:normalization-audit}\\
 \toprule
@@ -38,104 +39,110 @@
 
 \code{department} &
 \code{dept_id} &
-\code{dept_id} $\rightarrow$ \code{dept_name}, \code{office_phone}, \code{office_location} &
-3NF，具有 BCNF 倾向 &
+\fddep{\code{dept_id} $\rightarrow$ \code{dept_name}, \code{office_phone}, \code{office_location}} &
+3NF &
 已补充 \code{uq_department_name}，学院名称也成为显式业务唯一决定因素。 \\
 
 \code{major} &
 \code{major_id} &
-\code{major_id} $\rightarrow$ \code{major_name}, \code{dept_id} &
-3NF，具有 BCNF 倾向 &
+\fddep{\code{major_id} $\rightarrow$ \code{major_name}, \code{dept_id}} &
+3NF &
 通过 \code{dept_id} 引用学院，且已补充 \code{uq_major_dept_name} 避免同院系专业重名。 \\
 
 \code{user_account} &
 \code{user_id}；\code{username} &
-\code{user_id} $\rightarrow$ \code{username}, \code{password_hash}, \code{role}, \code{status}；\code{username} $\rightarrow$ \code{user_id} &
-3NF/BCNF 倾向明显 &
+\fddep{\code{user_id} $\rightarrow$ \code{username}, \code{password_hash}, \code{role}, \code{status}}
+\fddep{\code{username} $\rightarrow$ \code{user_id}} &
+3NF &
 \code{username} 有唯一约束，是登录业务候选键。 \\
 
 \code{user_session} &
 \code{session_id}；\code{token_hash} &
-\code{session_id} $\rightarrow$ \code{user_id}, \code{token_hash}, \code{created_at}, \code{expires_at}, \code{revoked_at}；\code{token_hash} $\rightarrow$ \code{session_id} &
-3NF/BCNF 倾向明显 &
+\fddep{\code{session_id} $\rightarrow$ \code{user_id}, \code{token_hash}, \code{created_at}, \code{expires_at}, \code{revoked_at}}
+\fddep{\code{token_hash} $\rightarrow$ \code{session_id}} &
+3NF &
 会话独立成表，避免在账户表中保存多个 token，符合 1NF。 \\
 
 \code{student} &
 \code{student_id}；\code{user_id} &
-\code{student_id} $\rightarrow$ \code{user_id}, \code{student_name}, \code{gender}, \code{major_id}, \code{class_name}, \code{status}；\code{user_id} $\rightarrow$ \code{student_id} &
-3NF，BCNF 需结合业务语义 &
+\fddep{\code{student_id} $\rightarrow$ \code{user_id}, \code{student_name}, \code{gender}, \code{major_id}, \code{class_name}, \code{status}}
+\fddep{\code{user_id} $\rightarrow$ \code{student_id}} &
+3NF &
 学生档案与账户分离；\code{major_id} 外键避免保存专业和院系详细信息。 \\
 
 \code{teacher} &
 \code{teacher_id}；\code{user_id} &
-\code{teacher_id} $\rightarrow$ \code{user_id}, \code{teacher_name}, \code{dept_id}, \code{title}, \code{status}；\code{user_id} $\rightarrow$ \code{teacher_id} &
-3NF，BCNF 需结合业务语义 &
+\fddep{\code{teacher_id} $\rightarrow$ \code{user_id}, \code{teacher_name}, \code{dept_id}, \code{title}, \code{status}}
+\fddep{\code{user_id} $\rightarrow$ \code{teacher_id}} &
+3NF &
 教师档案独立，避免账户表膨胀，并通过 \code{dept_id} 引用学院。 \\
 
 \code{admin_profile} &
 \code{admin_id}；\code{user_id} &
-\code{admin_id} $\rightarrow$ \code{user_id}, \code{admin_name}, \code{phone}；\code{user_id} $\rightarrow$ \code{admin_id} &
-3NF/BCNF 倾向明显 &
+\fddep{\code{admin_id} $\rightarrow$ \code{user_id}, \code{admin_name}, \code{phone}}
+\fddep{\code{user_id} $\rightarrow$ \code{admin_id}} &
+3NF &
 管理员资料与认证信息分离，\code{user_id} 唯一表达一对一关系。 \\
 
 \code{semester} &
 \code{semester_id} &
-\code{semester_id} $\rightarrow$ \code{semester_name}, \code{start_date}, \code{end_date}, \code{selection_start}, \code{selection_end}, \code{status}, \code{grade_policy_id} &
-3NF，具有 BCNF 倾向 &
+\fddep{\code{semester_id} $\rightarrow$ \code{semester_name}, \code{start_date}, \code{end_date}, \code{selection_start}, \code{selection_end}, \code{status}, \code{grade_policy_id}} &
+3NF &
 学期日期、选课窗口和绩点规则版本独立保存，避免在开课表或选课表中重复。 \\
 
 \code{grade_policy} &
 \code{policy_id}；\code{policy_code, version_no} &
-\code{policy_id} $\rightarrow$ \code{policy_code}, \code{policy_name}, \code{version_no}, \code{effective_from}, \code{status} &
-3NF/BCNF 倾向明显 &
+\fddep{\code{policy_id} $\rightarrow$ \code{policy_code}, \code{policy_name}, \code{version_no}, \code{effective_from}, \code{status}} &
+3NF &
 一版绩点规则独立成表，支持历史学期绑定不同规则版本。 \\
 
 \code{grade_scale} &
 \code{scale_id}；\code{policy_id, min_score, max_score} &
-\code{scale_id} $\rightarrow$ \code{policy_id}, \code{min_score}, \code{max_score}, \code{gpa_point}, \code{grade_label} &
-3NF，BCNF 需结合区间语义 &
+\fddep{\code{scale_id} $\rightarrow$ \code{policy_id}, \code{min_score}, \code{max_score}, \code{gpa_point}, \code{grade_label}} &
+3NF &
 分数区间到绩点的映射由规则表管理，并由触发器防止同一规则下区间重叠。 \\
 
 \code{course} &
 \code{course_id} &
-\code{course_id} $\rightarrow$ \code{course_name}, \code{course_type}, \code{credit}, \code{total_hours}, \code{dept_id}, \code{status} &
-3NF，BCNF 需结合业务语义 &
+\fddep{\code{course_id} $\rightarrow$ \code{course_name}, \code{course_type}, \code{credit}, \code{total_hours}, \code{dept_id}, \code{status}} &
+3NF &
 保存课程定义，不保存具体学期、教师或教室。 \\
 
 \code{classroom} &
 \code{classroom_id} &
-\code{classroom_id} $\rightarrow$ \code{building}, \code{room_no}, \code{capacity} &
-3NF，BCNF 需补充候选键确认 &
+\fddep{\code{classroom_id} $\rightarrow$ \code{building}, \code{room_no}, \code{capacity}} &
+3NF &
 教室容量独立保存；已补充 \code{uq_classroom_location} 避免重复教室实体。 \\
 
 \code{course_offering} &
 \code{offering_id} &
-\code{offering_id} $\rightarrow$ \code{course_id}, \code{semester_id}, \code{teacher_id}, \code{classroom_id}, \code{max_capacity}, \code{status} &
-3NF，具有 BCNF 倾向 &
+\fddep{\code{offering_id} $\rightarrow$ \code{course_id}, \code{semester_id}, \code{teacher_id}, \code{classroom_id}, \code{max_capacity}, \code{status}} &
+3NF &
 表示某课程在某学期由某教师开设的教学班；上课时间和已选人数分别由 \code{course_schedule} 与聚合查询表达。 \\
 
 \code{course_schedule} &
 \code{schedule_id}；\code{offering_id, weekday, start_section, end_section} &
-\code{schedule_id} $\rightarrow$ \code{offering_id}, \code{weekday}, \code{start_section}, \code{end_section} &
-1NF/2NF/3NF 良好 &
+\fddep{\code{schedule_id} $\rightarrow$ \code{offering_id}, \code{weekday}, \code{start_section}, \code{end_section}} &
+3NF &
 将上课时间拆为结构化时间片，业务唯一约束防止同一班次重复时间片。 \\
 
 \code{course_prerequisite} &
 \code{course_id, prereq_course_id} &
 无非主属性 &
-2NF/3NF/BCNF 倾向明显 &
+3NF &
 复合主键表，无非主属性，因此无部分依赖和传递依赖。 \\
 
 \code{enrollment} &
 \code{enrollment_id}；\code{student_id, offering_id} &
-\code{enrollment_id} $\rightarrow$ \code{student_id}, \code{offering_id}, \code{select_time}, \code{status}, \code{final_score}, \code{remark}；\code{student_id, offering_id} $\rightarrow$ \code{enrollment_id} &
-3NF，具有 BCNF 倾向 &
+\fddep{\code{enrollment_id} $\rightarrow$ \code{student_id}, \code{offering_id}, \code{select_time}, \code{status}, \code{final_score}, \code{remark}}
+\fddep{\code{student_id, offering_id} $\rightarrow$ \code{enrollment_id}} &
+3NF &
 选课关系表，同时保存状态、时间和成绩等联系属性；绩点由成绩规则在查询层计算。 \\
 
 \code{score_change_log} &
 \code{log_id} &
-\code{log_id} $\rightarrow$ \code{enrollment_id}, \code{old_score}, \code{new_score}, \code{changed_by_user_id}, \code{changed_at}, \code{reason} &
-3NF，具有 BCNF 倾向 &
+\fddep{\code{log_id} $\rightarrow$ \code{enrollment_id}, \code{old_score}, \code{new_score}, \code{changed_by_user_id}, \code{changed_at}, \code{reason}} &
+3NF &
 成绩修改历史独立保存，并由成绩更新触发器自动写入审计日志。 \\
 
 \end{longtable}
@@ -257,7 +264,7 @@
 
 如果在课程系统中将上课时间直接保存为展示文本，例如“周一 1-2 节 / 周三 3-4 节”，则一个字段中同时包含多个时间片。该方式虽然便于页面展示，但不利于数据库按星期和节次进行查询，也不利于选课时间冲突检查。系统使用 \code{course_schedule} 表保存结构化上课时间片，每条记录只表示一个教学班的一个上课时间片，包括 \code{weekday}、\code{start_section} 和 \code{end_section}。这样，每个字段都具有清晰的原子语义，满足第一范式要求。
 
-\code{migrate_3nf_20260608.sql} 体现了这一优化的可复现实施方式：脚本创建 \code{course_schedule}，并使用 \code{REGEXP_SPLIT_TO_TABLE} 将已有展示文本按分隔符解析为多行结构化时间片。对于来自数据库原理1阶段的历史样例数据，如果存在自定义格式的上课时间文本，需要在应用该优化前人工检查解析结果。
+系统采用可复现的 SQL 优化流程落实这一设计：数据库中建立 \code{course_schedule}，并可使用字符串拆分查询将已有展示文本解析为多行结构化时间片。对于来自数据库原理1阶段的历史样例数据，如果存在自定义格式的上课时间文本，需要在应用该优化前人工检查解析结果。
 
 此外，\code{user_session} 表没有在 \code{user_account} 中保存多个登录 token，而是将每次会话独立成行；\code{course_prerequisite} 没有在 \code{course} 中使用字符串列表保存先修课程，而是使用自关联中间表表达课程之间的先修关系。这些设计都避免了多值字段，提高了结构化查询能力。
 
@@ -297,61 +304,8 @@ BCNF 要求每一个非平凡函数依赖的决定因素都必须是候选键。
 
 因此，本系统当前设计在主键和已声明唯一约束范围内具有较好的 BCNF 倾向。但如果未来继续增加新的业务语义，例如正式行政班编码、跨学期培养方案等，仍需要同步声明新的候选键或拆分新的关系模式。绩点规则版本化已经通过 \code{grade_policy(policy_code, version_no)} 和 \code{grade_scale(policy_id, min_score, max_score)} 的唯一约束表达。
 
-\section{数据库原理1系统设计基础上的规范化优化}
-
-\code{migrate_3nf_20260608.sql} 是本报告中体现规范化优化的重要证据。它面向数据库原理1阶段已经具备功能的选课系统，进一步落实数据库原理2课程中关于 1NF、3NF、函数依赖和派生数据控制的要求。该脚本创建 \code{course_schedule}，处理已有展示型时间数据，并建立补偿查询性能的索引。表 \ref{tab:db1-optimization-3nf} 按“优化对象—数据库原理问题—当前处理—范式意义”进行说明。
-
-{\footnotesize
-\setlength{\tabcolsep}{3pt}
-\renewcommand{\arraystretch}{1.18}
-\begin{longtable}{p{0.22\textwidth}p{0.29\textwidth}p{0.25\textwidth}p{0.16\textwidth}}
-\caption{数据库原理1系统设计基础上的规范化优化说明}\label{tab:db1-optimization-3nf}\\
-\toprule
-优化对象 & 数据库原理问题 & 当前处理 & 对应范式意义 \\
-\midrule
-\endfirsthead
-\toprule
-优化对象 & 数据库原理问题 & 当前处理 & 对应范式意义 \\
-\midrule
-\endhead
-\bottomrule
-\endfoot
-
-\code{course_offering.schedule_text} &
-一个文本字段包含多个上课时间片，例如“周一 1-2 节 / 周三 3-4 节”，不便于时间冲突检查，也不符合属性原子化要求。 &
-独立为 \code{course_schedule(offering_id, weekday, start_section, end_section)}，每行表达一个结构化时间片。 &
-增强 1NF，支持结构化查询。 \\
-
-\code{course_offering.selected_count} &
-已选人数由 \code{enrollment} 统计得到，是派生字段，容易在插入、退课和并发选课时产生更新异常。 &
-基础表不保存 \code{selected_count}，通过 \code{enrollment} 统计或视图获得已选人数。 &
-减少冗余，增强 3NF，一致性更好。 \\
-
-\code{enrollment.gpa_point} &
-绩点可由 \code{final_score} 和绩点规则推导，直接保存可能与最终成绩不一致。 &
-基础表不保存 \code{gpa_point}，当前通过 \code{grade_policy}、\code{grade_scale}、\code{calculate_gpa()} 和视图计算。 &
-避免派生数据冗余，减少更新异常。 \\
-
-\code{selected_count} 维护逻辑 &
-如果依赖触发器维护派生计数字段，一旦触发器失败或并发复杂，容易产生一致性问题。 &
-触发器职责转向容量检查、时间冲突检查和审计日志，不负责同步派生计数字段。 &
-从维护派生冗余转向基于关系数据实时计算。 \\
-
-\end{longtable}
-}
-
-\section{规范化设计的后续改进方向}
-
-虽然系统设计已经较好地体现了规范化思想，但仍存在若干可以进一步完善的地方。
-
-首先，\code{class_name} 作为文本字段保存在 \code{student} 表中。如果班级只是展示标签，该设计可以接受；但如果班级还具有辅导员、年级、所属专业、班级人数等独立属性，则应设置 \code{class} 表，并在 \code{student} 中保存 \code{class_id}，避免班级信息重复。
-
-其次，\code{uq_department_name}、\code{uq_major_dept_name} 和 \code{uq_classroom_location} 把学院名称、同院系专业名称、楼栋房间号等业务唯一性固化到数据库层。这些约束不仅防止重复数据，也能让业务决定因素显式成为候选键，有助于更严格地讨论 BCNF。
-
-再次，\code{course_prerequisite} 可以表达课程先修关系。\code{chk_prereq_not_self} 避免课程把自己设置为自己的先修课；\code{trg_prerequisite_no_cycle} 使用递归查询检测先修课程环路。
-
-最后，如果需要继续扩展绩点计算，应在已有 \code{grade_policy} 和 \code{grade_scale} 基础上新增规则版本，而不是恢复 \code{enrollment.gpa_point}；如果需要高性能课程容量统计，可以用视图、物化视图或受控冗余，而不是直接恢复 \code{selected_count}。这些方案都需要在性能和一致性之间进行权衡。
-
 \section{规范化分析小结}
 
-规范化分析从函数依赖和候选键出发，对系统核心关系模式进行了审计。系统通过组织结构分解、账户与角色档案分离、课程定义与开课班次分离、上课时间片结构化、选课关系独立建模、成绩日志独立保存和绩点规则版本化，较好地避免了多值字段、部分依赖和传递依赖。尤其是 \code{course_schedule} 的引入，以及已选人数、绩点等可计算信息不进入基础表的处理方式，体现了在数据库原理1系统设计基础上进一步应用数据库原理2范式知识的优化过程。业务唯一约束、触发器和视图没有破坏 3NF：视图只是查询层封装，触发器用于维护跨表完整性。后续系统可以继续通过班级实体和培养方案规则表来提高数据库设计的严谨性。
+规范化分析从函数依赖和候选键出发，对系统核心关系模式进行了审计。系统通过组织结构分解、账户与角色档案分离、课程定义与开课班次分离、上课时间片结构化、选课关系独立建模、成绩日志独立保存和绩点规则版本化，较好地避免了多值字段、部分依赖和传递依赖。尤其是 \code{course_schedule} 的引入，以及已选人数、绩点等可计算信息不进入基础表的处理方式，体现了在数据库原理1系统设计基础上进一步应用数据库原理2范式知识的优化过程。业务唯一约束、触发器和视图没有破坏 3NF：视图只是查询层封装，触发器用于维护跨表完整性。
+
+% 后续系统可以继续通过班级实体和培养方案规则表来提高数据库设计的严谨性。

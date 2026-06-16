@@ -8,9 +8,9 @@
 
 \section{选课事务边界设计}
 
-\code{db/connection.py} 中的 \code{DBSession} 是项目的事务封装。它进入环境时建立连接，正常退出时提交事务，发生异常时回滚事务。学生选课、退课和成绩更新均使用显式事务路径。
+\code{DBSession} 是项目的事务封装。它进入环境时建立连接，正常退出时提交事务，发生异常时回滚事务。学生选课、退课和成绩更新均使用显式事务路径。
 
-学生选课由 \code{services/selection_service.py} 调用数据库函数 \code{select_course_tx(p_student_id, p_offering_id)}。openGauss 存储函数本身不显式开始或提交事务，而是在调用方事务中执行带锁检查和写入。因此事务边界由 \code{DBSession} 管理，数据库函数和触发器在同一事务环境内工作。
+学生选课由选课服务调用数据库函数 \code{select_course_tx(p_student_id, p_offering_id)}。openGauss 存储函数本身不显式开始或提交事务，而是在调用方事务中执行带锁检查和写入。因此事务边界由 \code{DBSession} 管理，数据库函数和触发器在同一事务环境内工作。
 
 \section{选课事务流程}
 
@@ -108,40 +108,40 @@ WHERE enrollment_id = :enrollment_id;
 
 系统没有显式调整全局事务隔离级别，而是针对高风险资源使用行级锁。对选课容量而言，锁定 \code{course_offering} 行能够把同一教学班的容量检查串行化；对重复选课而言，业务唯一约束可以在较低隔离级别下兜底；对成绩更新而言，服务层锁定目标 \code{enrollment} 行后再更新成绩，避免同一成绩记录并发覆盖。
 
-\section{多连接并发测试}
+% \section{多连接并发测试}
 
-除回滚型 SQL 测试脚本外，\code{scripts/concurrency_enrollment_test.py} 用于模拟两个独立数据库连接同时抢一个容量为 1 的教学班。脚本创建测试学期、测试课程、两个测试学生和一个容量为 1 的教学班，然后使用两个线程分别调用 \code{select_course_tx()}。并发验证记录结果为 \code{success_count = 1}、\code{failed_count = 1}、\code{selected_count_in_db = 1}。
+% 除回滚型 SQL 测试外，多连接并发验证程序用于模拟两个独立数据库连接同时抢一个容量为 1 的教学班。验证程序创建测试学期、测试课程、两个测试学生和一个容量为 1 的教学班，然后使用两个线程分别调用 \code{select_course_tx()}。并发验证记录结果为 \code{success_count = 1}、\code{failed_count = 1}、\code{selected_count_in_db = 1}。
 
-该脚本的价值在于验证 \code{SELECT ... FOR UPDATE} 不只是理论设计，而能在真实多连接环境中串行化同一教学班的容量检查。测试结果表明，在两个事务几乎同时提交选课请求时，只有一个事务成功插入 \code{selected} 记录，另一个事务在锁释放后重新统计容量并因名额已满失败。
+% 该脚本的价值在于验证 \code{SELECT ... FOR UPDATE} 不只是理论设计，而能在真实多连接环境中串行化同一教学班的容量检查。测试结果表明，在两个事务几乎同时提交选课请求时，只有一个事务成功插入 \code{selected} 记录，另一个事务在锁释放后重新统计容量并因名额已满失败。
 
-\section{并发控制的不足与改进}
+% \section{并发控制的不足与改进}
 
-表 \ref{tab:concurrency-risk-solution} 汇总了系统面向典型并发场景的处理方式。
+% 表 \ref{tab:concurrency-risk-solution} 汇总了系统面向典型并发场景的处理方式。
 
-{\footnotesize
-\setlength{\tabcolsep}{3pt}
-\renewcommand{\arraystretch}{1.18}
-\begin{longtable}{p{0.22\textwidth}p{0.23\textwidth}p{0.27\textwidth}p{0.20\textwidth}}
-\caption{并发风险与解决机制}\label{tab:concurrency-risk-solution}\\
-\toprule
-并发风险 & 可能后果 & 数据库层解决机制 & 应用层配合 \\
-\midrule
-\endfirsthead
-\toprule
-并发风险 & 可能后果 & 数据库层解决机制 & 应用层配合 \\
-\midrule
-\endhead
-\bottomrule
-\endfoot
-多个学生同时抢最后一个名额 & 超过 \code{max_capacity} & 锁定 \code{course_offering} 行后统计 \code{enrollment} & \code{DBSession} 调用 \code{select_course_tx()} \\
-同一学生多窗口重复提交 & 出现重复选课记录 & \code{select_course_tx()} 锁定既有记录，\code{UNIQUE(student_id, offering_id)} 兜底 & 把数据库异常转换为友好提示 \\
-教师更新成绩时需要审计 & 成绩变更无追踪或日志与成绩不一致 & \code{trg_score_change_log} 与成绩更新同事务执行 & 同事务设置 \code{app.current_user_id} 和修改原因 \\
-退课与成绩录入并发 & 已录入成绩的课程被退课 & 退课锁定目标 \code{enrollment}，触发器禁止有成绩或已完成记录退课 & 退课接口使用 \code{DBSession} \\
-管理员修改教学班容量时学生正在选课 & 容量降低造成已选人数超过上限 & \code{trg_offering_capacity_check} 检查容量不能低于当前已选人数 & 管理页面限制容量输入下限 \\
-\end{longtable}
-}
+% {\footnotesize
+% \setlength{\tabcolsep}{3pt}
+% \renewcommand{\arraystretch}{1.18}
+% \begin{longtable}{p{0.22\textwidth}p{0.23\textwidth}p{0.27\textwidth}p{0.20\textwidth}}
+% \caption{并发风险与解决机制}\label{tab:concurrency-risk-solution}\\
+% \toprule
+% 并发风险 & 可能后果 & 数据库层解决机制 & 应用层配合 \\
+% \midrule
+% \endfirsthead
+% \toprule
+% 并发风险 & 可能后果 & 数据库层解决机制 & 应用层配合 \\
+% \midrule
+% \endhead
+% \bottomrule
+% \endfoot
+% 多个学生同时抢最后一个名额 & 超过 \code{max_capacity} & 锁定 \code{course_offering} 行后统计 \code{enrollment} & \code{DBSession} 调用 \code{select_course_tx()} \\
+% 同一学生多窗口重复提交 & 出现重复选课记录 & \code{select_course_tx()} 锁定既有记录，\code{UNIQUE(student_id, offering_id)} 兜底 & 把数据库异常转换为友好提示 \\
+% 教师更新成绩时需要审计 & 成绩变更无追踪或日志与成绩不一致 & \code{trg_score_change_log} 与成绩更新同事务执行 & 同事务设置 \code{app.current_user_id} 和修改原因 \\
+% 退课与成绩录入并发 & 已录入成绩的课程被退课 & 退课锁定目标 \code{enrollment}，触发器禁止有成绩或已完成记录退课 & 退课接口使用 \code{DBSession} \\
+% 管理员修改教学班容量时学生正在选课 & 容量降低造成已选人数超过上限 & \code{trg_offering_capacity_check} 检查容量不能低于当前已选人数 & 管理页面限制容量输入下限 \\
+% \end{longtable}
+% }
 
-系统已处理最核心的抢课容量风险、重复选课风险和同课跨班风险，但仍有改进空间：可以继续扩大多连接并发压测规模，例如模拟几十个学生同时抢多个热门教学班，观察锁等待时间、失败原因分布和事务回滚行为；也可以进一步评估不同事务隔离级别对查询性能和一致性的影响。
+% 系统已处理最核心的抢课容量风险、重复选课风险和同课跨班风险，但仍有改进空间：可以继续扩大多连接并发压测规模，例如模拟几十个学生同时抢多个热门教学班，观察锁等待时间、失败原因分布和事务回滚行为；也可以进一步评估不同事务隔离级别对查询性能和一致性的影响。
 
 \section{事务与锁机制小结}
 
