@@ -16,7 +16,7 @@
 | 我的选课 | 查看当前学期可选课程，点击选课；查看已选课程，可退课 |
 | 我的成绩单 | 查看全部已修课程的成绩、学分、任课教师；统计平均分与加权绩点 |
 
-选课限制：容量已满禁止选课；先修课程未通过（成绩 < 60）禁止选后续课；已有成绩的课程不允许退课；选课只在学期开放的时间窗口内有效。
+选课限制：容量已满禁止选课；上课时间冲突禁止选课；先修课程未通过（成绩 < 60）禁止选后续课；已有成绩的课程不允许退课；选课只在学期开放的时间窗口内有效。选课写入使用事务和 `SELECT ... FOR UPDATE` 锁定目标开课班次，降低并发抢课导致超选的风险。
 
 ### 教师端
 
@@ -42,7 +42,7 @@
 
 ## 数据库设计
 
-共 13 张表，分为四个层次。
+核心业务表加上绩点规则表共 17 张左右，分为五个层次。
 
 ### 组织结构（3 张）
 
@@ -62,21 +62,24 @@
 | `teacher` | 教师详细信息：教师号、姓名、性别、所属院系、职称、邮箱 |
 | `admin_profile` | 管理员详细信息 |
 
-### 教学安排（3 张）
+### 教学安排（4 张）
 
 | 表名 | 说明 |
 |------|------|
 | `semester` | 学期：名称、起止日期、选课开放时间、状态 |
 | `course` | 课程定义：课程号、名称、类型（必修/选修/公共）、学分、学时、开课院系 |
-| `course_offering` | 开课班次：某学期某教师开设的具体课次，包含教室、容量上限、上课时间；`selected_count` 由触发器自动维护 |
+| `course_offering` | 开课班次：某学期某教师开设的具体课次，包含教室、容量上限和状态 |
+| `course_schedule` | 上课时间片：将班次上课时间拆分为星期、开始节次和结束节次，支持时间冲突检查 |
 
-### 选课与成绩（3 张）
+### 选课、成绩与绩点规则（5 张）
 
 | 表名 | 说明 |
 |------|------|
 | `course_prerequisite` | 先修关系：记录课程之间的先后依赖 |
-| `enrollment` | 选课记录：学生与开课班次的多对多关系，存储选课状态和最终成绩、绩点 |
+| `enrollment` | 选课记录：学生与开课班次的多对多关系，存储选课状态和最终成绩；不保存派生绩点 |
 | `score_change_log` | 成绩修改日志：每次成绩变更均记录修改前后的值、操作人和原因 |
+| `grade_policy` | 绩点规则版本：记录规则代码、版本、生效时间和状态 |
+| `grade_scale` | 绩点分段规则：记录某规则版本下成绩区间与绩点的对应关系 |
 
 ---
 
@@ -91,7 +94,7 @@
 ├── opengauss_setup/
 │   ├── docker/               # openGauss Docker Compose、初始化脚本、Tunnel 接入说明
 │   ├── config/               # openGauss 连接配置样例
-│   └── sql/init.sql          # openGauss 建表脚本，含触发器和样本数据
+│   └── sql/                  # openGauss 初始化脚本和结构迁移脚本
 │
 ├── db/
 │   ├── __init__.py           # 统一导出数据库工具函数
@@ -135,20 +138,21 @@
 
 ## 测试账号
 
-所有账号初始密码均为 `123456`。
+演示账号使用业务身份编号作为登录名，明文初始密码不写入仓库。最终演示数据包含 3 个管理员、30 个教师和 100 个学生账号。运行下面脚本可生成本地大规模演示 SQL 和本地凭据文件：
 
-| 用户名 | 角色 | 姓名 | 备注 |
-|--------|------|------|------|
-| `admin` | 管理员 | 系统管理员 | 全局权限 |
-| `t_zhang` | 教师 | 张明 | 计算机学院·副教授 |
-| `t_li` | 教师 | 李晓华 | 数学学院·讲师 |
-| `t_wang` | 教师 | 王志强 | 计算机学院·讲师 |
-| `t_sun` | 教师 | 孙敏 | 数学学院·副教授 |
-| `s_001` | 学生 | 王小明 | 计科2401班 |
-| `s_004` | 学生 | 赵雨桐 | 计科2402班 |
-| `s_006` | 学生 | 林可欣 | 软工2401班 |
-| `s_009` | 学生 | 许嘉宁 | 数学2401班 |
-| `s_012` | 学生 | 冯博文 | 数学2402班 |
+```bash
+python3 scripts/generate_large_demo_dataset.py
+```
+
+生成的 SQL 位于 `opengauss_setup/sql/local/seed_large_demo_dataset_20260611.sql`，真实初始密码保存在本地 `secrets/DEMO_ACCOUNT_CREDENTIALS.md`。这两个路径均已加入 `.gitignore`。公开仓库只保留 `docs/DEMO_ACCOUNT_CREDENTIALS.example.md` 作为格式示例。
+
+| 用户名规则 | 示例 | 角色 |
+|--------|------|------|
+| `admin_profile.admin_id` | `A001` | 管理员 |
+| `teacher.teacher_id` | `T001`、`T002` | 教师 |
+| `student.student_id` | `20240001`、`20240002` | 学生 |
+
+如只需要刷新轻量样例账号密码，也可以运行 `python3 scripts/generate_demo_credentials.py`。正式演示建议使用大规模数据生成脚本。
 
 ---
 
@@ -168,7 +172,7 @@
 ./opengauss_setup/docker/start_opengauss.sh
 ```
 
-此脚本会启动 `course-opengauss` 容器，创建 `course_system` 数据库，并导入 `opengauss_setup/sql/init.sql` 中的表、触发器和样本数据。
+此脚本会启动 `course-opengauss` 容器，创建 `course_system` 数据库，并导入 `opengauss_setup/sql/init.sql` 中的表、约束、索引和样本数据，随后应用触发器、视图和绩点规则迁移脚本。
 
 如需只启动容器：
 
@@ -182,11 +186,32 @@ docker compose -f opengauss_setup/docker/docker-compose.yml up -d
 ./opengauss_setup/docker/init_db.sh
 ```
 
+如果已有旧版 openGauss 数据库且不想重建，可先备份数据库，再审阅并执行 `opengauss_setup/sql/migrate_3nf_20260608.sql`，用于迁移到结构化上课时间和查询时计算派生值的 3NF 版本。
+
 如果已有 openGauss 数据库，只想补充持久登录所需的会话表，可执行：
 
 ```bash
 docker exec -i course-opengauss bash -lc 'export GAUSSHOME=/usr/local/opengauss; export PATH="$GAUSSHOME/bin:$PATH"; export LD_LIBRARY_PATH="$GAUSSHOME/lib:${LD_LIBRARY_PATH:-}"; gsql -v ON_ERROR_STOP=1 -U gaussdb --password Secretpassword@123 -d course_system -p 5432' < opengauss_setup/sql/add_user_session.sql
 ```
+
+如需使用最终演示数据，可在初始化和迁移完成后执行：
+
+```bash
+python3 scripts/generate_large_demo_dataset.py
+docker exec -i course-opengauss bash -lc 'export GAUSSHOME=/usr/local/opengauss; export PATH="$GAUSSHOME/bin:$PATH"; export LD_LIBRARY_PATH="$GAUSSHOME/lib:${LD_LIBRARY_PATH:-}"; gsql -v ON_ERROR_STOP=1 -U gaussdb -W Secretpassword@123 -d course_system -p 5432' < opengauss_setup/sql/local/seed_large_demo_dataset_20260611.sql
+docker exec -i course-opengauss bash -lc 'export GAUSSHOME=/usr/local/opengauss; export PATH="$GAUSSHOME/bin:$PATH"; export LD_LIBRARY_PATH="$GAUSSHOME/lib:${LD_LIBRARY_PATH:-}"; gsql -v ON_ERROR_STOP=1 -U gaussdb -W Secretpassword@123 -d course_system -p 5432' < opengauss_setup/sql/validate_large_demo_dataset.sql
+```
+
+该数据集覆盖 4 个学院、100 名学生、30 名教师、50 门课程、175 个教学班、1480 条选课记录和 80 条成绩审计日志。明文初始密码只保存在本地 `secrets/DEMO_ACCOUNT_CREDENTIALS.md`。
+
+如需补充容量已满、仅剩一名、时间冲突、同课跨班和先修课未满足等演示边界课程，可继续执行：
+
+```bash
+docker exec -i course-opengauss bash -lc 'export GAUSSHOME=/usr/local/opengauss; export PATH="$GAUSSHOME/bin:$PATH"; export LD_LIBRARY_PATH="$GAUSSHOME/lib:${LD_LIBRARY_PATH:-}"; gsql -v ON_ERROR_STOP=1 -U gaussdb -W Secretpassword@123 -d course_system -p 5432' < opengauss_setup/sql/seed_demo_edge_cases.sql
+docker exec -i course-opengauss bash -lc 'export GAUSSHOME=/usr/local/opengauss; export PATH="$GAUSSHOME/bin:$PATH"; export LD_LIBRARY_PATH="$GAUSSHOME/lib:${LD_LIBRARY_PATH:-}"; gsql -v ON_ERROR_STOP=1 -U gaussdb -W Secretpassword@123 -d course_system -p 5432' < opengauss_setup/sql/test_demo_edge_cases.sql
+```
+
+边界课程说明见 `report/DEMO_EDGE_CASES.md`。例如 `EDGE_FULL` 是已满课程，`EDGE_ONE_LEFT` 是仅剩一名课程。
 
 ---
 

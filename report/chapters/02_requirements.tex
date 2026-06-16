@@ -1,0 +1,88 @@
+\chapter{需求分析}
+
+\section{用户角色}
+
+项目通过 \code{user_account.role} 区分 \code{admin}、\code{student}、\code{teacher} 三类角色。登录认证由服务层完成，页面访问控制由角色守卫完成。三类用户需求如下：
+
+\begin{itemize}
+  \item 学生：查看当前学期可选课程，提交选课，查看已选课程，按规则退课，查看成绩单和绩点。
+  \item 教师：查看本人负责的开课班次，录入或修改学生成绩，查看成绩分布和成绩修改日志。
+  \item 管理员：维护学期、课程、开课班次、学生、教师，查看系统统计和所有班次成绩。
+\end{itemize}
+
+\section{功能需求}
+
+系统功能需求和实现层次见表 \ref{tab:function-requirements}。
+
+{\footnotesize
+\setlength{\tabcolsep}{3pt}
+\renewcommand{\arraystretch}{1.16}
+\begin{longtable}{p{2.7cm}p{6.7cm}p{3.9cm}}
+\caption{功能需求与实现层次对应关系}\label{tab:function-requirements}\\
+\toprule
+功能 & 当前实现 & 实现层次 \\
+\midrule
+\endfirsthead
+\toprule
+功能 & 当前实现 & 实现层次 \\
+\midrule
+\endhead
+登录与会话 & 用户名密码登录，Cookie 持久会话，按角色进入不同页面 & 认证服务、会话表和页面守卫 \\
+课程查询 & 学生、教师、管理员均可通过服务层查询课程与开课班次 & 课程查询服务与课程视图 \\
+选课 & 检查重复、容量、学期状态、选课窗口、先修课、时间冲突后写入 \code{enrollment} & 选课服务、数据库函数和触发器 \\
+退课 & 只能退本人已选且未录入成绩的课程，并检查学期和时间窗口 & 退课服务、事务和触发器 \\
+课程与教学班管理 & 管理员维护课程、学期、开课班次和上课时间片 & 管理页面、课程服务和数据库约束 \\
+成绩管理 & 教师只能维护本人班次，管理员可维护全部班次，并记录成绩日志 & 成绩服务、审计触发器和日志表 \\
+基础资料维护 & 管理学生、教师资料并同步创建账号 & 资料维护服务和角色一致性触发器 \\
+\bottomrule
+\end{longtable}
+}
+
+\section{数据需求}
+
+系统需要保存的数据分为五类。第一类是组织结构数据，包括 \code{department}、\code{major}、\code{classroom}。第二类是用户身份数据，包括 \code{user_account}、\code{user_session}、\code{student}、\code{teacher}、\code{admin_profile}。第三类是教学安排数据，包括 \code{semester}、\code{course}、\code{course_offering}、\code{course_schedule} 和 \code{course_prerequisite}。第四类是选课成绩数据，即 \code{enrollment}。第五类是审计数据，即 \code{score_change_log}。
+
+为保证页面演示和查询验证具有足够的数据量，演示数据覆盖 4 个学院、11 个专业、100 名学生、30 名教师、3 名管理员、50 门课程、4 个学期、20 间教室、175 个教学班、1480 条选课记录和 80 条成绩审计日志。学生、教师和管理员账号分别使用学号、教师编号和管理员编号作为登录名，数据库中仅保存密码哈希，明文初始密码只保存在本地凭据文件中。
+
+\section{业务规则}
+
+当前已经实现的业务规则包括：
+
+\begin{enumerate}
+  \item 重复选课限制：\code{select_course_tx()} 会锁定并检查同一学生、同一教学班的已有选课记录，\code{enrollment} 表上的 \code{UNIQUE(student_id, offering_id)} 作为数据库层兜底。
+  \item 容量限制：\code{trg_enrollment_guard} 在锁定 \code{course_offering} 行后统计 \code{status='selected'} 的人数，并与 \code{max_capacity} 比较。
+  \item 行级锁保护：选课函数和选课触发器均使用 \code{SELECT ... FOR UPDATE} 锁定目标 \code{course_offering} 行。
+  \item 时间冲突检查：\code{trg_enrollment_guard} 通过 \code{course_schedule} 的 \code{weekday}、\code{start_section}、\code{end_section} 判断同学期区间重叠。
+  \item 先修课限制：\code{trg_enrollment_guard} 通过 \code{course_prerequisite} 和历史 \code{completed} 成绩判断先修课是否达到 60 分。
+  \item 退课规则：只能退本人 \code{selected} 状态且未录入成绩的记录；数据库触发器禁止已完成或已有成绩的记录退课。
+  \item 成绩权限：教师只能维护自己负责的班次，管理员可以维护所有班次。
+  \item 成绩范围：数据库 CHECK 与服务层均限制成绩为 0 到 100。
+  \item 成绩审计：\code{trg_score_change_log} 在 \code{final_score} 变化后自动写入 \code{score_change_log}，操作者由成绩更新事务传入。
+  \item 角色档案一致性：学生、教师、管理员档案由触发器检查其 \code{user_id} 对应账户角色是否匹配。
+  \item 教学班与教室容量一致性：\code{trg_offering_capacity_check} 和 \code{trg_classroom_capacity_update_check} 维护 \code{max_capacity} 与教室容量之间的跨表约束。
+\end{enumerate}
+
+同一学生同一学期选择同一课程不同教学班的限制由 \code{trg_enrollment_guard} 在数据库层检查。仍需进一步完善的规则主要包括：数据库级角色授权在真实生产账号中的落地、备份恢复流程、运行监控以及更大规模的多连接并发压测。
+
+\section{数据字典草案}
+
+\begin{longtable}{p{3.4cm}p{3.8cm}p{7cm}}
+\caption{核心数据字典草案}\label{tab:data-dictionary}\\
+\toprule
+数据项 & 来源表 & 含义 \\
+\midrule
+\endfirsthead
+\toprule
+数据项 & 来源表 & 含义 \\
+\midrule
+\endhead
+\code{student_id} & \code{student} & 学生业务编号，学生主键。 \\
+\code{teacher_id} & \code{teacher} & 教师业务编号，教师主键。 \\
+\code{course_id} & \code{course} & 课程编号，表示课程定义。 \\
+\code{offering_id} & \code{course_offering} & 教学班代理主键，表示某学期某教师开设的具体课次。 \\
+\code{schedule_id} & \code{course_schedule} & 上课时间片主键。 \\
+\code{enrollment_id} & \code{enrollment} & 选课记录主键。 \\
+\code{final_score} & \code{enrollment} & 学生在某教学班的最终成绩。 \\
+\code{token_hash} & \code{user_session} & 持久登录 token 的哈希值。 \\
+\bottomrule
+\end{longtable}

@@ -3,6 +3,7 @@ import pandas as pd
 from pages._guards import require_role
 from db.connection import query
 from services.teacher_service import list_teachers, create_teacher, update_teacher, delete_teacher
+from ui.components import render_app_header, render_empty_state
 
 _GENDER_LABEL  = {"M": "男", "F": "女", "O": "其他"}
 _STATUS_OPTIONS = ["active", "retired", "leave"]
@@ -11,7 +12,7 @@ _TITLE_OPTIONS  = ["教授", "副教授", "讲师", "助教", "其他"]
 
 def render() -> None:
     require_role("admin")
-    st.header("教师信息维护")
+    render_app_header("教师信息维护", "维护教师档案、院系归属和登录账号。")
 
     tab_list, tab_add = st.tabs(["教师列表", "新增教师"])
 
@@ -20,7 +21,7 @@ def render() -> None:
         teachers = list_teachers(keyword=kw or None)
 
         if not teachers:
-            st.info("无匹配教师")
+            render_empty_state("无匹配教师", "请调整搜索条件，或新增教师档案。")
             return
 
         df = pd.DataFrame([
@@ -108,7 +109,7 @@ def render() -> None:
             teacher_name = col2.text_input("姓名 *")
             col3, col4   = st.columns(2)
             username     = col3.text_input("登录名 *")
-            password     = col4.text_input("初始密码", value="123456", type="password")
+            password     = col4.text_input("初始密码 *", type="password")
             col5, col6   = st.columns(2)
             gender       = col5.selectbox("性别", ["M", "F", "O"], format_func=lambda x: _GENDER_LABEL[x])
             title        = col6.selectbox("职称", _TITLE_OPTIONS)
@@ -118,8 +119,8 @@ def render() -> None:
             email        = st.text_input("邮箱")
 
             if st.form_submit_button("添加教师", type="primary"):
-                if not teacher_id.strip() or not teacher_name.strip() or not username.strip():
-                    st.error("教师号、姓名、登录名不能为空")
+                if not teacher_id.strip() or not teacher_name.strip() or not username.strip() or not password:
+                    st.error("教师号、姓名、登录名、初始密码不能为空")
                 else:
                     ok, msg = create_teacher({
                         "teacher_id": teacher_id.strip(), "teacher_name": teacher_name.strip(),

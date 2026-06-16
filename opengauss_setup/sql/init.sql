@@ -1,6 +1,7 @@
 DROP TABLE IF EXISTS score_change_log CASCADE;
 DROP TABLE IF EXISTS enrollment CASCADE;
 DROP TABLE IF EXISTS course_prerequisite CASCADE;
+DROP TABLE IF EXISTS course_schedule CASCADE;
 DROP TABLE IF EXISTS course_offering CASCADE;
 DROP TABLE IF EXISTS classroom CASCADE;
 DROP TABLE IF EXISTS course CASCADE;
@@ -12,9 +13,6 @@ DROP TABLE IF EXISTS user_session CASCADE;
 DROP TABLE IF EXISTS user_account CASCADE;
 DROP TABLE IF EXISTS major CASCADE;
 DROP TABLE IF EXISTS department CASCADE;
-
-DROP FUNCTION IF EXISTS trg_enrollment_insert_fn() CASCADE;
-DROP FUNCTION IF EXISTS trg_enrollment_update_fn() CASCADE;
 
 CREATE TABLE department (
     dept_id         VARCHAR(10)  NOT NULL,
@@ -155,8 +153,6 @@ CREATE TABLE course_offering (
     teacher_id     VARCHAR(20)  NOT NULL,
     classroom_id   VARCHAR(20),
     max_capacity   INTEGER      NOT NULL DEFAULT 60,
-    selected_count INTEGER      NOT NULL DEFAULT 0,
-    schedule_text  VARCHAR(200),
     status         VARCHAR(20)  NOT NULL DEFAULT 'open',
     PRIMARY KEY (offering_id),
     CONSTRAINT fk_offering_course    FOREIGN KEY (course_id)    REFERENCES course (course_id),
@@ -164,8 +160,21 @@ CREATE TABLE course_offering (
     CONSTRAINT fk_offering_teacher   FOREIGN KEY (teacher_id)   REFERENCES teacher (teacher_id),
     CONSTRAINT fk_offering_classroom FOREIGN KEY (classroom_id) REFERENCES classroom (classroom_id),
     CONSTRAINT chk_offering_status CHECK (status IN ('open','closed','cancelled')),
-    CONSTRAINT chk_max_capacity CHECK (max_capacity > 0),
-    CONSTRAINT chk_selected_count CHECK (selected_count >= 0)
+    CONSTRAINT chk_max_capacity CHECK (max_capacity > 0)
+);
+
+CREATE TABLE course_schedule (
+    schedule_id   BIGSERIAL   NOT NULL,
+    offering_id   BIGINT      NOT NULL,
+    weekday       SMALLINT    NOT NULL,
+    start_section SMALLINT    NOT NULL,
+    end_section   SMALLINT    NOT NULL,
+    PRIMARY KEY (schedule_id),
+    CONSTRAINT fk_schedule_offering FOREIGN KEY (offering_id)
+        REFERENCES course_offering (offering_id) ON DELETE CASCADE,
+    CONSTRAINT uq_schedule_slot UNIQUE (offering_id, weekday, start_section, end_section),
+    CONSTRAINT chk_schedule_weekday CHECK (weekday BETWEEN 1 AND 7),
+    CONSTRAINT chk_schedule_section CHECK (start_section > 0 AND end_section >= start_section)
 );
 
 CREATE TABLE course_prerequisite (
@@ -183,15 +192,13 @@ CREATE TABLE enrollment (
     select_time   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     status        VARCHAR(20)  NOT NULL DEFAULT 'selected',
     final_score   DECIMAL(5,2),
-    gpa_point     DECIMAL(3,2),
     remark        VARCHAR(200),
     PRIMARY KEY (enrollment_id),
     CONSTRAINT uq_student_offering UNIQUE (student_id, offering_id),
     CONSTRAINT fk_enrollment_student  FOREIGN KEY (student_id)  REFERENCES student (student_id),
     CONSTRAINT fk_enrollment_offering FOREIGN KEY (offering_id) REFERENCES course_offering (offering_id),
     CONSTRAINT chk_enrollment_status CHECK (status IN ('selected','dropped','completed')),
-    CONSTRAINT chk_final_score CHECK (final_score IS NULL OR (final_score >= 0 AND final_score <= 100)),
-    CONSTRAINT chk_gpa_point CHECK (gpa_point IS NULL OR (gpa_point >= 0 AND gpa_point <= 5))
+    CONSTRAINT chk_final_score CHECK (final_score IS NULL OR (final_score >= 0 AND final_score <= 100))
 );
 
 CREATE TABLE score_change_log (
@@ -207,47 +214,6 @@ CREATE TABLE score_change_log (
     CONSTRAINT fk_log_user       FOREIGN KEY (changed_by_user_id) REFERENCES user_account (user_id)
 );
 
-CREATE OR REPLACE FUNCTION trg_enrollment_insert_fn()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.status = 'selected' THEN
-        UPDATE course_offering
-        SET selected_count = selected_count + 1
-        WHERE offering_id = NEW.offering_id;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_enrollment_insert
-AFTER INSERT ON enrollment
-FOR EACH ROW
-EXECUTE PROCEDURE trg_enrollment_insert_fn();
-
-CREATE OR REPLACE FUNCTION trg_enrollment_update_fn()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF OLD.status = 'selected' AND NEW.status = 'dropped' THEN
-        UPDATE course_offering
-        SET selected_count = GREATEST(selected_count - 1, 0)
-        WHERE offering_id = NEW.offering_id;
-    END IF;
-
-    IF OLD.status = 'dropped' AND NEW.status = 'selected' THEN
-        UPDATE course_offering
-        SET selected_count = selected_count + 1
-        WHERE offering_id = NEW.offering_id;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_enrollment_update
-AFTER UPDATE ON enrollment
-FOR EACH ROW
-EXECUTE PROCEDURE trg_enrollment_update_fn();
-
 INSERT INTO department (dept_id, dept_name, office_phone, office_location) VALUES
 ('CS',  '计算机学院',   '010-88881111', '综合楼 A301'),
 ('MATH','数学学院',     '010-88882222', '综合楼 B201');
@@ -258,91 +224,91 @@ INSERT INTO major (major_id, major_name, dept_id) VALUES
 ('MA01', '数学与应用数学',   'MATH');
 
 INSERT INTO user_account (username, password_hash, role) VALUES
-('admin',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'admin'),
-('t_zhang',  '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'teacher'),
-('t_li',     '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'teacher'),
-('t_wang',   '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'teacher'),
-('t_sun',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'teacher'),
-('s_001',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_002',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_003',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_004',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_005',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_006',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_007',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_008',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_009',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_010',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_011',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student'),
-('s_012',    '8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92', 'student');
+('A001'      , 'aa2f2a6a615a46f1308d6428c56502c6156e6e250fc29ac495973af1ec7b3b0a', 'admin'),
+('T001'      , '1d8c517897a0c80497a566149d3cb0d7fbdce3cacfd1645ff438e25f88913ca3', 'teacher'),
+('T002'      , 'd03e29994d74943bf67c66788657d8f41037a06f2012a5d28bbf697e76e6968b', 'teacher'),
+('T003'      , '85c815d91406aa8355b051b3a166f80a7d0c0c86476b5e239333ebec3854691c', 'teacher'),
+('T004'      , '30cbe3354426dc724d0c85186d38c177ee6c18c3b396093646dbab81a34c8648', 'teacher'),
+('20240001'  , '2ba3aa3b5526695724b59b0904dd505761afb26d53f9761cf8ae48a14332be8f', 'student'),
+('20240002'  , '2cfac232cc996079f797aeb6c0dd7d8620a22f9fa0ff447adda341e820f73093', 'student'),
+('20240003'  , 'f3fa73168febe7fbeb6d9a6d49ca92cce7960875463e98da545b4a84dad2197d', 'student'),
+('20240004'  , '2fb3bb27f4d83409d227a9cc8f40681183796281e8f0a42d196b70cb73c99093', 'student'),
+('20240005'  , '1ff574fc70b65edcdf76ae80f3984690b332f9b9e71c2fce649beffdaed74aec', 'student'),
+('20240006'  , '15a613d501b4626266553eee91186e2c0c367c9fb2f269a3b6235036af659eae', 'student'),
+('20240007'  , '394aa5ab8fa3a29eab7542630b82507cadde342f544cd38117c51d475d8080e9', 'student'),
+('20240008'  , '70fcbf437ff8183ad085b29301b52413346892c6b0e8447a44c2b2e35848a59d', 'student'),
+('20240009'  , '467527c2a0e6ea503db8e6cdd8c6c7e4db6bcaa34e32d8e0528703912c4234fb', 'student'),
+('20240010'  , 'afa6487c660f4567c75c4abdf592975634cbd2f38875d955bd22116f82ca2787', 'student'),
+('20240011'  , '9489e430dceaf57351578cf5cd32361bc1f99adca8c836b7e1ea2b1581aefd33', 'student'),
+('20240012'  , 'ec460a3b9546035848b36339c293be1680953fc54fef1b16eca7693a5f2ac568', 'student');
 
 INSERT INTO admin_profile (admin_id, user_id, admin_name, phone)
 SELECT 'A001', user_id, '系统管理员', '010-88880000'
-FROM user_account WHERE username = 'admin';
+FROM user_account WHERE username = 'A001';
 
 INSERT INTO teacher (teacher_id, user_id, teacher_name, gender, dept_id, title, email)
 SELECT 'T001', user_id, '张明', 'M', 'CS', '副教授', 'zhangming@edu.cn'
-FROM user_account WHERE username = 't_zhang';
+FROM user_account WHERE username = 'T001';
 
 INSERT INTO teacher (teacher_id, user_id, teacher_name, gender, dept_id, title, email)
 SELECT 'T002', user_id, '李晓华', 'F', 'MATH', '讲师', 'lixiaohua@edu.cn'
-FROM user_account WHERE username = 't_li';
+FROM user_account WHERE username = 'T002';
 
 INSERT INTO teacher (teacher_id, user_id, teacher_name, gender, dept_id, title, email)
 SELECT 'T003', user_id, '王志强', 'M', 'CS', '讲师', 'wangzhiqiang@edu.cn'
-FROM user_account WHERE username = 't_wang';
+FROM user_account WHERE username = 'T003';
 
 INSERT INTO teacher (teacher_id, user_id, teacher_name, gender, dept_id, title, email)
 SELECT 'T004', user_id, '孙敏', 'F', 'MATH', '副教授', 'sunmin@edu.cn'
-FROM user_account WHERE username = 't_sun';
+FROM user_account WHERE username = 'T004';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240001', user_id, '王小明', 'M', 2024, 'CS01', '计科2401', 'wxm@stu.edu.cn'
-FROM user_account WHERE username = 's_001';
+FROM user_account WHERE username = '20240001';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240002', user_id, '陈雨欣', 'F', 2024, 'CS01', '计科2401', 'cyx@stu.edu.cn'
-FROM user_account WHERE username = 's_002';
+FROM user_account WHERE username = '20240002';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240003', user_id, '刘强', 'M', 2024, 'CS02', '软工2401', 'lq@stu.edu.cn'
-FROM user_account WHERE username = 's_003';
+FROM user_account WHERE username = '20240003';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240004', user_id, '赵雨桐', 'F', 2024, 'CS01', '计科2402', 'zyt@stu.edu.cn'
-FROM user_account WHERE username = 's_004';
+FROM user_account WHERE username = '20240004';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240005', user_id, '周子豪', 'M', 2024, 'CS01', '计科2402', 'zzh@stu.edu.cn'
-FROM user_account WHERE username = 's_005';
+FROM user_account WHERE username = '20240005';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240006', user_id, '林可欣', 'F', 2024, 'CS02', '软工2401', 'lkx@stu.edu.cn'
-FROM user_account WHERE username = 's_006';
+FROM user_account WHERE username = '20240006';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240007', user_id, '何俊杰', 'M', 2024, 'CS02', '软工2402', 'hjj@stu.edu.cn'
-FROM user_account WHERE username = 's_007';
+FROM user_account WHERE username = '20240007';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240008', user_id, '郭书瑶', 'F', 2024, 'CS02', '软工2402', 'gsy@stu.edu.cn'
-FROM user_account WHERE username = 's_008';
+FROM user_account WHERE username = '20240008';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240009', user_id, '许嘉宁', 'F', 2024, 'MA01', '数学2401', 'xjn@stu.edu.cn'
-FROM user_account WHERE username = 's_009';
+FROM user_account WHERE username = '20240009';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240010', user_id, '高远', 'M', 2024, 'MA01', '数学2401', 'gy@stu.edu.cn'
-FROM user_account WHERE username = 's_010';
+FROM user_account WHERE username = '20240010';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240011', user_id, '唐诗雨', 'F', 2024, 'MA01', '数学2402', 'tsy@stu.edu.cn'
-FROM user_account WHERE username = 's_011';
+FROM user_account WHERE username = '20240011';
 
 INSERT INTO student (student_id, user_id, student_name, gender, enroll_year, major_id, class_name, email)
 SELECT '20240012', user_id, '冯博文', 'M', 2024, 'MA01', '数学2402', 'fbw@stu.edu.cn'
-FROM user_account WHERE username = 's_012';
+FROM user_account WHERE username = '20240012';
 
 INSERT INTO semester (semester_id, semester_name, start_date, end_date, selection_start, selection_end, status) VALUES
 ('2025-2026-1', '2025-2026学年第一学期',
@@ -379,16 +345,34 @@ INSERT INTO classroom (classroom_id, building, room_no, capacity) VALUES
 ('M201', '数理楼', '201', 50),
 ('M301', '数理楼', '301', 40);
 
-INSERT INTO course_offering (course_id, semester_id, teacher_id, classroom_id, max_capacity, schedule_text) VALUES
-('CS101', '2025-2026-2', 'T001', 'C101', 60, '周一 1-2 节 / 周三 3-4 节'),
-('CS201', '2025-2026-2', 'T001', 'C201', 40, '周二 3-4 节 / 周四 5-6 节'),
-('CS221', '2025-2026-2', 'T003', 'C201', 40, '周五 1-2 节 / 周五 3-4 节'),
-('CS301', '2025-2026-2', 'T003', 'C301', 30, '周三 1-2 节 / 周四 1-2 节'),
-('MA101', '2025-2026-2', 'T002', 'M201', 60, '周一 5-6 节 / 周五 1-2 节'),
-('MA201', '2025-2026-2', 'T004', 'M301', 40, '周二 1-2 节 / 周四 3-4 节'),
-('MA301', '2025-2026-2', 'T004', 'M301', 40, '周三 5-6 节 / 周五 5-6 节'),
-('CS401', '2025-2026-2', 'T001', 'C301', 30, '周三 7-8 节'),
-('CS402', '2025-2026-2', 'T003', 'C301', 30, '周二 7-8 节');
+INSERT INTO course_offering (course_id, semester_id, teacher_id, classroom_id, max_capacity) VALUES
+('CS101', '2025-2026-2', 'T001', 'C101', 60),
+('CS201', '2025-2026-2', 'T001', 'C201', 40),
+('CS221', '2025-2026-2', 'T003', 'C201', 40),
+('CS301', '2025-2026-2', 'T003', 'C301', 30),
+('MA101', '2025-2026-2', 'T002', 'M201', 50),
+('MA201', '2025-2026-2', 'T004', 'M301', 40),
+('MA301', '2025-2026-2', 'T004', 'M301', 40),
+('CS401', '2025-2026-2', 'T001', 'C301', 30),
+('CS402', '2025-2026-2', 'T003', 'C301', 30);
+
+INSERT INTO course_schedule (offering_id, weekday, start_section, end_section) VALUES
+(1, 1, 1, 2),
+(1, 3, 3, 4),
+(2, 2, 3, 4),
+(2, 4, 5, 6),
+(3, 5, 1, 2),
+(3, 5, 3, 4),
+(4, 3, 1, 2),
+(4, 4, 1, 2),
+(5, 1, 5, 6),
+(5, 5, 1, 2),
+(6, 2, 1, 2),
+(6, 4, 3, 4),
+(7, 3, 5, 6),
+(7, 5, 5, 6),
+(8, 3, 7, 8),
+(9, 2, 7, 8);
 
 INSERT INTO enrollment (student_id, offering_id, status) VALUES
 ('20240001', 1, 'selected'),
@@ -416,18 +400,35 @@ INSERT INTO enrollment (student_id, offering_id, status) VALUES
 ('20240012', 5, 'selected'),
 ('20240012', 9, 'selected');
 
-INSERT INTO course_offering (course_id, semester_id, teacher_id, classroom_id, max_capacity, schedule_text, status) VALUES
-('CS101', '2025-2026-1', 'T001', 'C101', 60, '周一 1-2 节', 'closed'),
-('MA101', '2025-2026-1', 'T002', 'M201', 60, '周二 3-4 节', 'closed'),
-('MA201', '2025-2026-1', 'T004', 'M301', 40, '周四 1-2 节', 'closed');
+INSERT INTO course_offering (course_id, semester_id, teacher_id, classroom_id, max_capacity, status) VALUES
+('CS101', '2025-2026-1', 'T001', 'C101', 60, 'closed'),
+('MA101', '2025-2026-1', 'T002', 'M201', 50, 'closed'),
+('MA201', '2025-2026-1', 'T004', 'M301', 40, 'closed');
 
-INSERT INTO enrollment (student_id, offering_id, status, final_score, gpa_point) VALUES
-('20240001', 10, 'completed', 88.0, 3.5),
-('20240002', 10, 'completed', 92.0, 4.0),
-('20240003', 10, 'completed', 75.0, 3.0),
-('20240009', 11, 'completed', 91.0, 4.0),
-('20240010', 11, 'completed', 84.0, 3.3),
-('20240011', 11, 'completed', 78.0, 3.0),
-('20240009', 12, 'completed', 87.0, 3.7),
-('20240010', 12, 'completed', 82.0, 3.3),
-('20240012', 12, 'completed', 73.0, 2.3);
+INSERT INTO course_schedule (offering_id, weekday, start_section, end_section) VALUES
+(10, 1, 1, 2),
+(11, 2, 3, 4),
+(12, 4, 1, 2);
+
+INSERT INTO enrollment (student_id, offering_id, status, final_score) VALUES
+('20240001', 10, 'completed', 88.0),
+('20240002', 10, 'completed', 92.0),
+('20240003', 10, 'completed', 75.0),
+('20240009', 11, 'completed', 91.0),
+('20240010', 11, 'completed', 84.0),
+('20240011', 11, 'completed', 78.0),
+('20240009', 12, 'completed', 87.0),
+('20240010', 12, 'completed', 82.0),
+('20240012', 12, 'completed', 73.0);
+
+CREATE INDEX idx_offering_course_semester ON course_offering (course_id, semester_id);
+CREATE INDEX idx_offering_teacher_semester ON course_offering (teacher_id, semester_id);
+CREATE INDEX idx_schedule_offering ON course_schedule (offering_id);
+CREATE INDEX idx_schedule_time ON course_schedule (weekday, start_section, end_section);
+CREATE INDEX idx_enrollment_student_status ON enrollment (student_id, status);
+CREATE INDEX idx_enrollment_offering_status ON enrollment (offering_id, status);
+
+-- Clean database initialization should be followed by
+-- opengauss_setup/sql/migrate_triggers_constraints_20260608.sql.
+-- opengauss_setup/docker/init_db.sh applies that migration automatically so
+-- constraints, triggers, functions, and reporting views are present after setup.

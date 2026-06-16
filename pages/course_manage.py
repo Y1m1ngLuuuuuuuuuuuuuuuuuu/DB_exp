@@ -14,6 +14,7 @@ from services.course_service import (
     list_semesters,
     list_classrooms,
 )
+from ui.components import render_app_header, render_empty_state
 
 _TYPE_LABEL = {"required": "必修", "elective": "选修", "public": "公共"}
 _TYPE_OPTIONS = ["required", "elective", "public"]
@@ -22,7 +23,7 @@ _OFFERING_STATUS_LABEL = {"open": "开放", "closed": "关闭", "cancelled": "�
 
 def render() -> None:
     require_role("admin")
-    st.header("课程与开课安排维护")
+    render_app_header("课程与开课安排维护", "维护课程定义、教学班和课程容量信息。")
 
     tab_list, tab_add, tab_offering = st.tabs(["课程列表", "新增课程", "开课安排"])
 
@@ -31,7 +32,7 @@ def render() -> None:
         courses = list_courses(keyword=kw or None, include_inactive=True)
 
         if not courses:
-            st.info("无匹配课程")
+            render_empty_state("无匹配课程", "请调整搜索条件，或新增课程。")
         else:
             df = pd.DataFrame([
                 {

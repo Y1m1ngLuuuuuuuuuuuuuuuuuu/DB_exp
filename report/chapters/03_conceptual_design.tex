@@ -1,0 +1,52 @@
+\chapter{概念结构设计}
+
+\section{实体抽取}
+
+根据当前数据库结构反向抽取，系统实体可以分为组织结构、用户身份、教学安排、选课成绩和审计记录五组。
+
+\begin{itemize}
+  \item 组织结构实体：院系 \code{department}、专业 \code{major}、教室 \code{classroom}。
+  \item 用户身份实体：统一账号 \code{user_account}、学生 \code{student}、教师 \code{teacher}、管理员资料 \code{admin_profile}、用户会话 \code{user_session}。
+  \item 教学安排实体：学期 \code{semester}、课程 \code{course}、开课班次 \code{course_offering}、上课时间片 \code{course_schedule}、先修关系 \code{course_prerequisite}。
+  \item 选课成绩实体：选课记录 \code{enrollment}。
+  \item 审计实体：成绩修改日志 \code{score_change_log}。
+\end{itemize}
+
+\section{属性设计}
+
+课程和开课班次是本项目概念设计的关键。课程 \code{course} 保存课程号、课程名、课程类型、学分、学时、所属院系和状态；开课班次 \code{course_offering} 保存课程、学期、教师、教室、容量上限和班次状态。二者分离后，同一课程可在不同学期、不同教师、不同教室多次开设，而不会重复保存课程名称、学分、学时等基础信息。
+
+在数据库原理1系统基础上的规范化优化中，上课时间不作为自由文本保存在 \code{course_offering} 中，而是由 \code{course_schedule(schedule_id, offering_id, weekday, start_section, end_section)} 表示。一个教学班可对应多个时间片，便于后续进行时间冲突检查。
+
+\section{联系与基数}
+
+主要联系如下：
+
+\begin{itemize}
+  \item 院系与专业、教师、课程均为 1:N。
+  \item 统一账号与学生、教师、管理员资料为 1:0..1。
+  \item 课程与开课班次为 1:N。
+  \item 学期与开课班次为 1:N。
+  \item 教师与开课班次为 1:N。
+  \item 教室与开课班次为 1:N。
+  \item 开课班次与上课时间片为 1:N。
+  \item 学生与开课班次是 M:N，通过 \code{enrollment} 转换为两个 1:N 联系。
+  \item 课程与课程之间存在先修自关联，通过 \code{course_prerequisite} 转换。
+\end{itemize}
+
+\section{ER 图}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.98\textwidth]{er_conceptual.png}
+    \caption{选课系统概念结构 ER 图}
+    \label{fig:er-conceptual}
+\end{figure}
+
+图 \ref{fig:er-conceptual} 采用实体--联系图表达方式：矩形表示实体，菱形表示联系，连线上的 \code{1}、\code{N}、\code{0..1} 表示基数约束。为保证报告中的可读性，图中只保留每个实体的核心属性；完整字段、主键、外键和唯一约束在第 4 章逻辑关系模型中进一步展开。
+
+\section{从业务语义到概念模型}
+
+学生并不是直接选择“课程定义”，而是选择某个学期中由某位教师开设的具体教学班。因此，将学生与课程直接建模为 M:N 会丢失教师、学期、教室、容量和时间等重要语义。本项目使用 \code{course_offering} 表示教学班，再用 \code{enrollment} 表示学生选择教学班这一联系，既符合现实业务，也便于记录选课状态和成绩。
+
+先修关系是课程与课程之间的自关联。如果直接在 \code{course} 中保存一个先修课程字段，只能表达一个先修课程且不利于扩展。当前使用 \code{course_prerequisite(course_id, prereq_course_id)}，可以表达一门课程有多个先修课，也可以表达一门课被多门后续课依赖。

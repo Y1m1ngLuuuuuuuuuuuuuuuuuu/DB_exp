@@ -1,4 +1,53 @@
-from db.connection import query, query_one, execute
+import re
+
+from db.connection import query, query_one, execute, DBSession
+
+_WEEKDAY_TO_INT = {
+    "周一": 1,
+    "周二": 2,
+    "周三": 3,
+    "周四": 4,
+    "周五": 5,
+    "周六": 6,
+    "周日": 7,
+    "周天": 7,
+}
+_SCHEDULE_PATTERN = re.compile(r"^(周[一二三四五六日天])\s*(\d+)\s*-\s*(\d+)\s*节?$")
+
+
+def parse_schedule_text(schedule_text: str | None) -> list[tuple[int, int, int]]:
+    if not schedule_text or not schedule_text.strip():
+        return []
+
+    rows: list[tuple[int, int, int]] = []
+    for raw_part in re.split(r"[/／;；,，]+", schedule_text):
+        part = raw_part.strip()
+        if not part:
+            continue
+        match = _SCHEDULE_PATTERN.match(part)
+        if not match:
+            raise ValueError("上课时间格式应为“周一 1-2 节 / 周三 3-4 节”")
+
+        weekday_label, start_text, end_text = match.groups()
+        start_section = int(start_text)
+        end_section = int(end_text)
+        if start_section <= 0 or end_section < start_section:
+            raise ValueError("上课节次必须为正数，且结束节次不能早于开始节次")
+        rows.append((_WEEKDAY_TO_INT[weekday_label], start_section, end_section))
+    return rows
+
+
+def _insert_schedule_rows(cur, offering_id: int, schedule_rows: list[tuple[int, int, int]]) -> None:
+    if not schedule_rows:
+        return
+    cur.executemany(
+        """
+        INSERT INTO course_schedule
+          (offering_id, weekday, start_section, end_section)
+        VALUES (%s,%s,%s,%s)
+        """,
+        [(offering_id, weekday, start, end) for weekday, start, end in schedule_rows],
+    )
 
 def list_semesters() -> list[dict]:
     return query("SELECT * FROM semester ORDER BY start_date DESC")
@@ -120,49 +169,40 @@ def delete_course(course_id: str) -> tuple[bool, str]:
 
 def list_offerings(semester_id: str = None, teacher_id: str = None) -> list[dict]:
     sql = """
-        SELECT co.offering_id, co.schedule_text, co.max_capacity,
-               co.selected_count, co.status,
-               c.course_id, c.course_name, c.credit,
-               t.teacher_id, t.teacher_name,
-               s.semester_name, s.semester_id,
-               cl.building, cl.room_no
-        FROM course_offering co
-        JOIN course  c  ON co.course_id    = c.course_id
-        JOIN teacher t  ON co.teacher_id   = t.teacher_id
-        JOIN semester s ON co.semester_id  = s.semester_id
-        LEFT JOIN classroom cl ON co.classroom_id = cl.classroom_id
+        SELECT offering_id, schedule_text, max_capacity,
+               selected_count, status,
+               course_id, course_name, credit,
+               teacher_id, teacher_name,
+               semester_name, semester_id,
+               building, room_no
+        FROM v_course_offering_detail
         WHERE 1=1
     """
     args: list = []
     if semester_id:
-        sql += " AND co.semester_id=%s"
+        sql += " AND semester_id=%s"
         args.append(semester_id)
     if teacher_id:
-        sql += " AND co.teacher_id=%s"
+        sql += " AND teacher_id=%s"
         args.append(teacher_id)
-    sql += " ORDER BY co.offering_id"
+    sql += " ORDER BY offering_id"
     return query(sql, args or None)
 
 def list_offerings_for_student(student_id: str, semester_id: str) -> list[dict]:
     return query(
         """
-        SELECT co.offering_id, co.schedule_text, co.max_capacity,
-               co.selected_count,
-               (co.max_capacity - co.selected_count) AS seats_left,
-               c.course_id, c.course_name, c.credit, c.course_type,
-               t.teacher_name,
-               cl.building, cl.room_no
-        FROM course_offering co
-        JOIN course  c  ON co.course_id   = c.course_id
-        JOIN teacher t  ON co.teacher_id  = t.teacher_id
-        LEFT JOIN classroom cl ON co.classroom_id = cl.classroom_id
-        WHERE co.semester_id = %s
-          AND co.status = 'open'
-          AND co.offering_id NOT IN (
+        SELECT offering_id, schedule_text, max_capacity,
+               selected_count, remaining_capacity AS seats_left,
+               course_id, course_name, credit, course_type,
+               teacher_name, building, room_no
+        FROM v_course_offering_detail
+        WHERE semester_id = %s
+          AND status = 'open'
+          AND offering_id NOT IN (
               SELECT offering_id FROM enrollment
               WHERE student_id = %s AND status = 'selected'
           )
-        ORDER BY c.course_id
+        ORDER BY course_id
         """,
         (semester_id, student_id),
     )
@@ -173,38 +213,52 @@ def list_classrooms() -> list[dict]:
 
 def create_offering(data: dict) -> tuple[bool, str]:
     try:
-        execute(
-            """
-            INSERT INTO course_offering
-              (course_id, semester_id, teacher_id, classroom_id,
-               max_capacity, schedule_text, status)
-            VALUES (%s,%s,%s,%s,%s,%s,%s)
-            """,
-            (
-                data["course_id"], data["semester_id"], data["teacher_id"],
-                data.get("classroom_id"), data["max_capacity"],
-                data.get("schedule_text", ""), data.get("status", "open"),
-            ),
-        )
+        schedule_rows = parse_schedule_text(data.get("schedule_text", ""))
+        with DBSession() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO course_offering
+                      (course_id, semester_id, teacher_id, classroom_id,
+                       max_capacity, status)
+                    VALUES (%s,%s,%s,%s,%s,%s)
+                    RETURNING offering_id
+                    """,
+                    (
+                        data["course_id"], data["semester_id"], data["teacher_id"],
+                        data.get("classroom_id"), data["max_capacity"],
+                        data.get("status", "open"),
+                    ),
+                )
+                offering_id = cur.fetchone()["offering_id"]
+                _insert_schedule_rows(cur, offering_id, schedule_rows)
         return True, ""
     except Exception as exc:
         return False, str(exc)
 
 def update_offering(offering_id: int, data: dict) -> tuple[bool, str]:
     try:
-        execute(
-            """
-            UPDATE course_offering
-            SET teacher_id=%s, classroom_id=%s, max_capacity=%s,
-                schedule_text=%s, status=%s
-            WHERE offering_id=%s
-            """,
-            (
-                data["teacher_id"], data.get("classroom_id"),
-                data["max_capacity"], data.get("schedule_text", ""),
-                data.get("status", "open"), offering_id,
-            ),
-        )
+        schedule_rows = parse_schedule_text(data.get("schedule_text", ""))
+        with DBSession() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE course_offering
+                    SET teacher_id=%s, classroom_id=%s, max_capacity=%s,
+                        status=%s
+                    WHERE offering_id=%s
+                    """,
+                    (
+                        data["teacher_id"], data.get("classroom_id"),
+                        data["max_capacity"], data.get("status", "open"),
+                        offering_id,
+                    ),
+                )
+                cur.execute(
+                    "DELETE FROM course_schedule WHERE offering_id=%s",
+                    (offering_id,),
+                )
+                _insert_schedule_rows(cur, offering_id, schedule_rows)
         return True, ""
     except Exception as exc:
         return False, str(exc)
@@ -227,17 +281,16 @@ def list_enrolled_offerings(student_id: str, semester_id: str) -> list[dict]:
     return query(
         """
         SELECT e.enrollment_id, e.status AS enroll_status,
-               e.final_score, e.gpa_point,
-               co.offering_id, co.schedule_text,
-               c.course_id, c.course_name, c.credit, c.course_type,
-               t.teacher_name,
-               cl.building, cl.room_no
+               e.final_score, vgd.gpa_point,
+               vod.offering_id, vod.schedule_text,
+               vod.course_id, vod.course_name, vod.credit, vod.course_type,
+               vod.teacher_name,
+               vod.building, vod.room_no
         FROM enrollment e
-        JOIN course_offering co ON e.offering_id  = co.offering_id
-        JOIN course  c  ON co.course_id   = c.course_id
-        JOIN teacher t  ON co.teacher_id  = t.teacher_id
-        LEFT JOIN classroom cl ON co.classroom_id = cl.classroom_id
-        WHERE co.semester_id = %s AND e.student_id = %s
+        JOIN v_course_offering_detail vod ON e.offering_id = vod.offering_id
+        LEFT JOIN v_enrollment_grade_detail vgd
+          ON e.enrollment_id = vgd.enrollment_id
+        WHERE vod.semester_id = %s AND e.student_id = %s
         ORDER BY e.enrollment_id
         """,
         (semester_id, student_id),

@@ -1,4 +1,8 @@
 *.png
+!report/figures/*.png
+!report/figures/ui/
+!report/figures/ui/*.png
+.DS_Store
 .claude
 .venv/
 __pycache__/
@@ -6,3 +10,12 @@ __pycache__/
 sql
 !opengauss_setup/sql/
 !opengauss_setup/sql/*.sql
+report/*.aux
+report/*.log
+report/*.out
+report/*.toc
+logs/
+secrets/
+*ACCOUNT_CREDENTIALS*.md
+!docs/DEMO_ACCOUNT_CREDENTIALS.example.md
+opengauss_setup/sql/local/

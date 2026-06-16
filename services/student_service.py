@@ -34,6 +34,8 @@ def list_students(keyword: str = None) -> list[dict]:
 
 def create_student(data: dict) -> tuple[bool, str]:
     from services.auth_service import hash_password
+    if not data.get("password"):
+        return False, "初始密码不能为空"
     try:
         with DBSession() as conn:
             with conn.cursor() as cur:
@@ -43,7 +45,7 @@ def create_student(data: dict) -> tuple[bool, str]:
                     VALUES (%s,%s,'student')
                     RETURNING user_id
                     """,
-                    (data["username"], hash_password(data.get("password", "123456"))),
+                    (data["username"], hash_password(data["password"])),
                 )
                 user_id = cur.fetchone()["user_id"]
                 cur.execute(

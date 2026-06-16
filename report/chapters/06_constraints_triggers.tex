@@ -1,0 +1,152 @@
+\chapter{完整性约束、触发器与检查机制}
+
+\section{完整性约束设计目标}
+
+完整性机制以数据库最终结构、触发器定义和回滚型验证结果为实现依据。完整性设计目标包括：实体可唯一标识、外键引用合法、业务取值范围合法、角色档案与账户角色一致、先修课程关系无自指和环路、选课过程不超容量且不发生时间冲突、同一学生同一学期同一课程只能选择一个教学班、成绩修改可以审计追踪。
+
+在数据库原理1系统基础上的优化中，本系统没有把 \code{selected_count} 作为基础表字段，也不通过触发器同步派生计数，而是通过 \code{enrollment} 表和视图统计当前已选人数。触发器的职责集中在跨表业务完整性检查和审计记录维护，例如选课容量检查、时间冲突检查、先修课程合法性检查以及成绩变更日志写入。
+
+\section{实体完整性：主键约束}
+
+实体完整性主要通过主键实现。当前数据库为所有核心表设置主键，例如 \code{department.dept_id}、\code{student.student_id}、\code{teacher.teacher_id}、\code{course.course_id}、\code{course_offering.offering_id}、\code{course_schedule.schedule_id}、\code{enrollment.enrollment_id}。这些主键保证每个实体或业务事件可以被唯一标识。
+
+\section{参照完整性：外键约束}
+
+参照完整性通过外键约束实现。典型外键包括：\code{major.dept_id} 引用 \code{department.dept_id}，\code{student.user_id} 引用 \code{user_account.user_id}，\code{course_offering.course_id} 引用 \code{course.course_id}，\code{course_schedule.offering_id} 引用 \code{course_offering.offering_id}，\code{enrollment.student_id} 引用 \code{student.student_id}，\code{score_change_log.enrollment_id} 引用 \code{enrollment.enrollment_id}。其中 \code{user_session.user_id} 和 \code{course_schedule.offering_id} 使用 \code{ON DELETE CASCADE}，用于自动清理会话和教学班时间片。
+
+\section{用户自定义完整性：UNIQUE、CHECK、NOT NULL、DEFAULT}
+
+系统在原有主键、外键、NOT NULL、DEFAULT 和 CHECK 约束基础上，进一步声明业务唯一约束和合法性检查。表 \ref{tab:constraints-new} 总结了主要约束。
+
+\begin{longtable}{p{0.23\textwidth}p{0.35\textwidth}p{0.33\textwidth}}
+\caption{主要完整性约束}\label{tab:constraints-new}\\
+\toprule
+表 & 约束 & 业务含义 \\
+\midrule
+\endfirsthead
+\toprule
+表 & 约束 & 业务含义 \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\code{department} & \code{uq_department_name} & 学院名称唯一，避免同一学院重复建档。 \\
+\code{major} & \code{uq_major_dept_name} & 同一学院内专业名称唯一。 \\
+\code{classroom} & \code{uq_classroom_location} & 同一楼栋同一房间号只能对应一个教室实体。 \\
+\code{course_prerequisite} & \code{chk_prereq_not_self} & 课程不能把自己作为自己的先修课程。 \\
+\code{semester} & \code{chk_semester_date_range} & 学期起止日期、选课窗口起止时间必须合法。 \\
+\code{user_session} & \code{chk_user_session_time_range} & 会话过期时间必须晚于创建时间，撤销时间不能早于创建时间。 \\
+\code{course_schedule} & \code{chk_schedule_section_range} & 节次范围限定为 1 到 12，并要求结束节次不早于开始节次。 \\
+\code{enrollment} & \code{UNIQUE(student_id, offering_id)} & 防止同一学生重复选择同一教学班。 \\
+\end{longtable}
+
+教学班容量与教室容量的关系属于跨表约束，普通 CHECK 无法查询另一张表，因此本系统使用触发器实现。优化脚本执行前先审计并修正了已有样例数据中 \code{MA101} 班次容量大于 \code{M201} 教室容量的问题。
+
+\section{跨表业务完整性与触发器设计}
+
+数据库触发器不是用于维护 \code{selected_count}，而是用于角色档案一致性、先修关系合法性、选课完整性、教室容量一致性和成绩审计。表 \ref{tab:trigger-list} 给出触发器清单。
+
+{\scriptsize
+\setlength{\tabcolsep}{2pt}
+\renewcommand{\arraystretch}{1.16}
+\begin{longtable}{p{0.18\textwidth}p{0.13\textwidth}p{0.17\textwidth}p{0.31\textwidth}p{0.14\textwidth}}
+\caption{数据库触发器实现清单}\label{tab:trigger-list}\\
+\toprule
+触发器名称 & 作用表 & 触发时机 & 检查或维护内容 & 对应课程知识点 \\
+\midrule
+\endfirsthead
+\toprule
+触发器名称 & 作用表 & 触发时机 & 检查或维护内容 & 对应课程知识点 \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\code{trg_student_role_check} & \code{student} & 插入或修改 \code{user_id} 前 & 学生档案必须引用 \code{role='student'} 的账户 & 跨表用户自定义完整性 \\
+\code{trg_teacher_role_check} & \code{teacher} & 插入或修改 \code{user_id} 前 & 教师档案必须引用 \code{role='teacher'} 的账户 & 子类型一致性 \\
+\code{trg_admin_role_check} & \code{admin_profile} & 插入或修改 \code{user_id} 前 & 管理员档案必须引用 \code{role='admin'} 的账户 & 角色完整性 \\
+\code{trg_prerequisite_no_cycle} & \code{course_prerequisite} & 插入或更新前 & 禁止自指先修课，并用递归查询检测环路 & 递归查询与复杂完整性 \\
+\code{trg_offering_capacity_check} & \code{course_offering} & 插入或改容量、教室前 & 教学班容量不能超过教室容量，且不能低于当前已选人数 & 跨表约束 \\
+\code{trg_classroom_capacity_update_check} & \code{classroom} & 更新 \code{capacity} 前 & 降低教室容量时不能小于已有教学班容量 & 更新约束 \\
+\code{trg_enrollment_guard} & \code{enrollment} & 插入或改学生、班次、状态前 & 检查学生状态、班次状态、选课窗口、容量、同课跨班、时间冲突、先修课和退课限制 & 主动规则、事务与锁 \\
+\code{trg_score_change_log} & \code{enrollment} & 更新 \code{final_score} 后 & 自动写入 \code{score_change_log}，记录旧成绩、新成绩、操作者和原因 & 审计触发器 \\
+\end{longtable}
+}
+
+表 \ref{tab:rule-implementation-evidence} 进一步把业务规则、数据库实现对象和验证方式对应起来，用于说明“已实现”表述的证据来源。
+
+{\scriptsize
+\setlength{\tabcolsep}{2pt}
+\renewcommand{\arraystretch}{1.16}
+\begin{longtable}{p{0.22\textwidth}p{0.28\textwidth}p{0.22\textwidth}p{0.23\textwidth}}
+\caption{数据库规则、实现对象与验证方式}\label{tab:rule-implementation-evidence}\\
+\toprule
+业务规则 & 数据库实现对象 & 实现层次 & 验证方式 \\
+\midrule
+\endfirsthead
+\toprule
+业务规则 & 数据库实现对象 & 实现层次 & 验证方式 \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+角色档案一致性 & \code{trg_student_role_check}、\code{trg_teacher_role_check}、\code{trg_admin_role_check} & 角色档案触发器 & 角色错配插入失败测试 \\
+先修课程自指与环路 & \code{chk_prereq_not_self}、\code{trg_prerequisite_no_cycle} & CHECK 约束和递归触发器 & 自指和环路插入失败测试 \\
+教学班容量不超过教室容量 & \code{trg_offering_capacity_check}、\code{trg_classroom_capacity_update_check} & 教学班与教室触发器 & 样例数据修正和触发器检查 \\
+选课容量检查 & \code{trg_enrollment_guard} & 选课完整性触发器 & 容量为 1 的第二次选课失败测试 \\
+时间冲突检查 & \code{trg_enrollment_guard}、\code{course_schedule} & 选课触发器和结构化时间片 & 同学期重叠时间片选课失败测试 \\
+同课跨班限制 & \code{trg_enrollment_guard}、\code{course_offering} & 选课触发器和教学班关系 & 同学生同学期同课程第二个教学班选课失败测试 \\
+先修课程通过检查 & \code{trg_enrollment_guard}、\code{course_prerequisite} & 选课触发器和先修关系 & 先修课完成且成绩不低于 60 的规则测试 \\
+已完成或已有成绩不能退课 & \code{trg_enrollment_guard} & 选课状态触发器 & 已完成选课改为退课失败测试 \\
+成绩修改自动审计 & \code{trg_score_change_log}、\code{score_change_log} & 成绩审计触发器和成绩服务 & 设置操作者后更新成绩并验证日志行 \\
+重复选课防护 & \code{UNIQUE(student_id, offering_id)}、\code{select_course_tx()} & 唯一约束和选课事务函数 & 重复插入触发唯一约束失败 \\
+已选人数统计视图 & \code{v_offering_selected_count} & 聚合视图 & 视图 smoke test 查询成功 \\
+\end{longtable}
+}
+
+\section{选课完整性触发器}
+
+\code{trg_enrollment_guard} 是选课系统最核心的数据库层完整性保护。对 \code{status='selected'} 的插入或恢复选课，它会锁定目标 \code{course_offering} 行，然后检查当前已选人数是否小于 \code{max_capacity}。已选人数通过 \code{enrollment} 聚合统计得到，基础表不设置 \code{course_offering.selected_count}。
+
+同课跨班限制也在该触发器中完成。触发器先通过 \code{NEW.offering_id} 得到当前教学班的 \code{course_id} 和 \code{semester_id}，再查询该学生是否已经存在同学期、同课程、其他教学班的 \code{selected} 状态选课记录。若存在，则抛出异常并阻止写入。这样，\code{UNIQUE(student_id, offering_id)} 负责防止重复选择同一个教学班，触发器负责防止同一学期同一课程跨班重复选择。
+
+该触发器还基于 \code{course_schedule} 检查同一学期内的时间冲突，区间重叠条件为：
+
+\begin{lstlisting}[style=sqlstyle]
+target.weekday = existing.weekday
+AND existing.start_section <= target.end_section
+AND existing.end_section >= target.start_section
+\end{lstlisting}
+
+先修课程检查基于 \code{course_prerequisite} 和历史 \code{enrollment} 记录。系统采用 60 分作为通过先修课程的业务规则，即学生必须存在 \code{status='completed'} 且 \code{final_score >= 60} 的先修课程记录。退课时，触发器禁止已完成课程或已有成绩记录改为 \code{dropped}。
+
+\section{成绩变更审计触发器}
+
+\code{trg_score_change_log} 在 \code{enrollment.final_score} 更新后触发。当旧成绩和新成绩不同，触发器自动向 \code{score_change_log} 插入日志。由于日志表要求 \code{changed_by_user_id} 非空，业务层必须在同一事务内设置当前操作者：
+
+\begin{lstlisting}[style=sqlstyle]
+SELECT set_config('app.current_user_id', '<user_id>', true);
+SELECT set_config('app.score_change_reason', '<reason>', true);
+UPDATE enrollment
+SET final_score = 88, status = 'completed'
+WHERE enrollment_id = 1;
+\end{lstlisting}
+
+如果业务层没有设置 \code{app.current_user_id}，触发器会拒绝成绩更新。这比单纯在应用层手工插入日志更可靠，因为任何直接更新 \code{final_score} 的数据库操作都会被同一个审计规则约束。
+
+\section{角色档案一致性触发器}
+
+\code{student}、\code{teacher} 和 \code{admin_profile} 虽然都通过 \code{user_id} 外键引用 \code{user_account}，但普通外键只能保证账户存在，不能保证角色匹配。因此本系统实现了通用函数 \code{check_user_role_fn(p_user_id, p_expected_role)}，并由三个档案触发器复用。测试脚本已经验证，将教师账户插入学生档案、将学生账户插入教师档案都会被拒绝。
+
+\section{先修课程合法性触发器}
+
+\code{chk_prereq_not_self} 可以阻止 \code{course_id = prereq_course_id} 的直接自指，但不能发现更复杂的 A 依赖 B、B 依赖 C、C 又依赖 A 的环路。本系统通过 \code{trg_prerequisite_no_cycle} 在插入或更新先修关系前执行递归查询，沿着先修链查找是否会回到当前课程。如果形成环路，触发器抛出异常并阻止写入。
+
+\section{应用层校验与数据库触发器的关系}
+
+当前应用层仍保留友好的错误提示和页面交互检查，例如选课服务会调用数据库函数 \code{select_course_tx()}，成绩服务会在事务内设置审计变量。数据库触发器承担兜底一致性责任：即使绕过前端或服务层，只要直接写数据库，也必须通过容量、时间冲突、先修课程、角色档案和成绩审计规则。
+
+这种分层体现了数据库完整性设计思想：局部、稳定的规则用 CHECK、UNIQUE 和外键表达；跨表和环境相关规则用触发器表达；用户体验相关的提示和权限入口仍由应用层负责。
+
+\section{完整性机制小结}
+
+系统的完整性机制已经覆盖基础完整性和跨表业务完整性。主键、外键、唯一约束、CHECK、DEFAULT 保证基础完整性；角色、容量、先修、选课和成绩日志等跨表规则由触发器维护；应用层负责权限入口、事务调用和友好错误提示。尤其需要强调的是，触发器不维护 \code{selected_count} 这类派生计数字段，而是在保留 3NF 结构的前提下承担复杂完整性检查和审计职责。

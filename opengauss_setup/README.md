@@ -1,6 +1,6 @@
 # openGauss 设置目录
 
-这个目录用于放 openGauss 版本相关的配置和迁移文件。当前项目根目录已经切换为 openGauss 连接；原 MySQL 版本快照保存在 `mysql_current_version_20260509/`。
+这个目录用于放 openGauss 版本相关的配置、初始化脚本和运行说明。当前项目根目录已经切换为 openGauss 连接。
 
 ## 目录结构
 
@@ -9,7 +9,8 @@
 - `docker/init_db.sh`: 重置并导入 `course_system`
 - `docker/cloudflare_tunnel.md`: Cloudflare Tunnel origin 设置说明
 - `config/config_opengauss.py`: 项目连接配置样例
-- `sql/init.sql`: openGauss 版建表、触发器、样本数据
+- `sql/init.sql`: openGauss 版建表、约束、索引和样本数据
+- `sql/migrate_3nf_20260608.sql`: 旧库迁移到 3NF 结构的审阅后执行脚本
 
 ## 常用命令
 

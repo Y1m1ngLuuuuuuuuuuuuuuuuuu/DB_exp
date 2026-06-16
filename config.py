@@ -6,7 +6,7 @@ DB_CONFIG = {
     "database": "course_system",
 }
 
-APP_TITLE   = "选课管理系统"
+APP_TITLE   = "学生选课成绩管理系统"
 APP_ICON    = "📚"
 
 PASSWORD_HASH_ALGO = "sha256"
